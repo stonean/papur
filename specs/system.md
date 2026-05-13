@@ -53,4 +53,4 @@ The dispatch architecture, target-qualified content (`::: @web` blocks, `@print`
 
 ## Open Questions
 
-- **AST shape** — mdast-derived (with papur extensions) or a custom tree? The choice affects parser implementation but not the language surface. Resolution belongs at the start of implementation, not at design time.
+- **AST shape** — mdast-derived (with papur extensions) or a custom tree? The choice affects parser implementation but not the language surface. Resolution belongs to the formal language specification ([016-language-specification](016-language-specification/spec.md)).
