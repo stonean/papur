@@ -110,6 +110,8 @@ See [constitution.md](constitution.md) — guiding principles, development pipel
 ## Boundaries
 
 - Follow tasks.md literally — do not skip ahead to later pipeline phases. When tasks say to set status to `planned`, stop there. The user advances to the next phase explicitly.
+- Third-party work must be under an MIT-equivalent permissive license: **MIT, BSD-2-Clause, BSD-3-Clause, ISC, or Apache-2.0**. Anything else — MPL, OFL, LGPL, GPL/AGPL, CC variants, proprietary, "no-license-stated" — is rejected. Apache-2.0 brings a `NOTICE` propagation obligation; honor it via `THIRD_PARTY_NOTICES`. Verify the LICENSE file before drawing on a project.
+- Third-party work must be attributed when drawn on — whether by porting code, transcribing an algorithm, or adopting a substantial documented design idea. The MIT-style legal floor only requires this for copied code; this project's floor is broader (any use, not just copyright-triggering use). Attribute in `research.md` for design-level borrowing, and in source comments plus a `THIRD_PARTY_NOTICES` file when code is ported.
 
 <!-- Define additional project-specific boundaries. Common patterns:
 
