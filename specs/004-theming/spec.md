@@ -34,7 +34,7 @@ radius.md: 0.5rem
   ink: #fafafa
   paper: #1a1a1a
 
-@print
+@pdf
   brand: black
 
 @email
@@ -42,7 +42,7 @@ radius.md: 0.5rem
 :::
 ```
 
-Each key/value pair is a token. Indented variant blocks (`@dark`, `@print`, `@email`, etc.) define overrides activated under specific conditions.
+Each key/value pair is a token. Indented variant blocks (`@dark`, `@pdf`, `@email`, etc.) define overrides activated under specific conditions.
 
 ## Token Emission
 
@@ -74,7 +74,7 @@ In the CSS layer, theme tokens are referenced with the `$` sigil — Sass-flavor
 The compiler resolves `$brand` based on target:
 
 - **Web target** — emitted as `var(--brand)`, runtime-themeable.
-- **Print / email / static targets** — inlined value from the relevant variant block.
+- **PDF / email / static targets** — inlined value from the relevant variant block.
 
 ## Variant Qualifiers
 
@@ -85,7 +85,7 @@ The compiler resolves `$brand` based on target:
 | `@high-contrast` | `prefers-contrast: more` |
 | `@reduced-motion` | `prefers-reduced-motion: reduce` |
 | `@web` | Web target (default) |
-| `@print` | Print target |
+| `@pdf` | PDF target |
 | `@email` | Email target |
 
 Variant qualifiers are shared between `::: theme` and `::: css`.
@@ -183,7 +183,7 @@ The compiler does not enforce the separation — author discretion. This is a "c
 ## Acceptance Criteria
 
 - [ ] `space.md: 1rem` emits `--space-md: 1rem` on the root scope for web targets.
-- [ ] `$brand` in `::: css` resolves to `var(--brand)` on web and to the literal value (e.g. `oklch(60% 0.2 250)`) on print / email / plain.
+- [ ] `$brand` in `::: css` resolves to `var(--brand)` on web and to the literal value (e.g. `oklch(60% 0.2 250)`) on pdf / email / plain.
 - [ ] `@dark` overrides emit under `@media (prefers-color-scheme: dark)` and under `[data-theme="dark"]` on web; on static targets, only the active variant for that target is inlined.
 - [ ] A `::: theme` block inside a fenced div emits its overrides scoped to that container's selector.
 - [ ] `--pad: $space.md` resolves the `$space.md` reference at compile time, then emits the resulting value on the component selector.

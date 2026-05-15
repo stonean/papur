@@ -50,4 +50,4 @@ These are the properties any form design should preserve. They are not yet accep
 - **Error rendering** — automatic insertion of error containers, or explicit author-placed slots?
 - **Multi-step forms** — supported as a first-class pattern, or expressed by composing simpler forms?
 - **CSRF and security** — does papur emit CSRF token slots, or is the form purely structural and security is left to the form action's server-side handler?
-- **Non-web targets** — does a form render anywhere besides web? Likely web-only, but the print/email/plain emitters need to know whether to drop it silently or emit a static representation.
+- **Non-web targets** — does a form render anywhere besides web? Likely web-only, but the pdf/email/plain emitters need to know whether to drop it silently or emit a static representation.

@@ -49,7 +49,7 @@ Target qualifiers scope rule blocks to a specific output target:
   @web
     box-shadow: 0 2px 8px rgba(0,0,0,0.1)
 
-  @print
+  @pdf
     border: 1pt solid black
     break-inside: avoid
 
@@ -86,7 +86,7 @@ Accessibility qualifiers expose user-preference media queries with first-class s
 
 - [ ] A `.btn` rule with `padding: $space.sm $space.md` emits the resolved theme values per target (var() on web, inlined elsewhere).
 - [ ] Nested `&.primary` produces `.btn.primary` in the compiled output.
-- [ ] `@web` blocks emit only on the web target; `@print` blocks emit only on the print target; `@email` blocks emit only on the email target.
+- [ ] `@web` blocks emit only on the web target; `@pdf` blocks emit only on the pdf target; `@email` blocks emit only on the email target.
 - [ ] `@reduced-motion` emits under `@media (prefers-reduced-motion: reduce)` on web.
 - [ ] Any role with a handler in `::: script` automatically gets a `:focus-visible` rule unless the author has written one explicitly.
 - [ ] Sass `&` parent selector chains correctly across multiple nesting levels.

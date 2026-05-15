@@ -1,6 +1,6 @@
 ---
 status: draft
-dependencies: [001-file-format]
+dependencies: [001-file-format, 011-target-pdf]
 review:
   last-run: null
   reviewed-against: null
@@ -32,24 +32,24 @@ Inline raw HTML mid-paragraph (Markdown-style) is permitted for things like `<kb
 
 ## Web-Only by Default
 
-`::: html` is web-only by default. The block is dropped from print, email, and plain targets unless a target qualifier explicitly includes it.
+`::: html` is web-only by default. The block is dropped from pdf, email, and plain targets unless a target qualifier explicitly includes it.
 
 To opt into a non-web target, qualify the block:
 
 ```text
-::: @print html
-<!-- raw HTML that should appear in print -->
+::: @pdf html
+<!-- raw HTML that should appear in the pdf target -->
 :::
 ```
 
-The qualified form is rare; most raw HTML belongs to the web target only.
+The qualified form is rare; most raw HTML belongs to the web target only. Even on the pdf target the qualified form is advisory — the pdf emitter consumes the AST directly and may decline raw HTML it cannot represent as structure-tree-tagged output.
 
 ## Acceptance Criteria
 
 - [ ] A `::: html` block emits its contents verbatim on the web target.
-- [ ] A `::: html` block is omitted from print, email, and plain targets by default.
+- [ ] A `::: html` block is omitted from pdf, email, and plain targets by default.
 - [ ] Inline raw HTML in a paragraph (e.g. `Press <kbd>Esc</kbd>`) is preserved on the web target.
-- [ ] A target-qualified `::: @print html` block emits on the print target.
+- [ ] A target-qualified `::: @pdf html` block is acknowledged by the pdf target (emission rules for raw HTML in the pdf target are owned by [011-target-pdf](../011-target-pdf/spec.md)).
 - [ ] Raw HTML inside a `::: html` block is not re-parsed as papur content — papur-style attribute syntax inside the block is not interpreted.
 
 ## Open Questions

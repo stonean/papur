@@ -17,7 +17,7 @@ The dispatch architecture that lets one `.papur` source compile to multiple outp
 > Per-target emission rules live in their own specs:
 >
 > - `010-target-web` — HTML + CSS
-> - `011-target-print` — HTML + print CSS, or PDF
+> - `011-target-pdf` — tagged PDF, emitted directly from the AST
 > - `012-target-email` — table-based HTML with inlined CSS
 > - `013-target-plain` — plain text
 
@@ -36,7 +36,7 @@ A fenced block can be scoped to one or more targets:
 @include interactive-demo.papur
 :::
 
-::: @print
+::: @pdf
 *See the live version at example.com/demo*
 :::
 ```
@@ -58,9 +58,9 @@ The compile target is supplied at compile time (CLI flag, build config, API para
 - [ ] One parser pass produces one AST that can be walked by any registered emitter.
 - [ ] A block with no `@target` qualifier is emitted for every target.
 - [ ] A block qualified `::: @web` is emitted only when the compile target is web.
-- [ ] A block qualified `::: @print` is emitted only when the compile target is print.
+- [ ] A block qualified `::: @pdf` is emitted only when the compile target is pdf.
 - [ ] A block qualified `::: @email` is emitted only when the compile target is email.
-- [ ] The `::: script` layer is silently omitted from print, email, and plain target output.
+- [ ] The `::: script` layer is silently omitted from pdf, email, and plain target output.
 - [ ] Adding a new target emitter does not require changes to the parser or the AST.
 
 ## Open Questions

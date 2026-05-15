@@ -47,7 +47,7 @@ A role that does not match a bundled pattern still compiles, but the author is r
 
 ## Non-Web Targets
 
-The behavior layer is silently dropped from non-web targets (print, email, plain) — see [009-multi-target](../009-multi-target/spec.md). No warning is emitted; the dropped behavior is a contract, not a mistake.
+The behavior layer is silently dropped from non-web targets (pdf, email, plain) — see [009-multi-target](../009-multi-target/spec.md). No warning is emitted; the dropped behavior is a contract, not a mistake.
 
 ## Acceptance Criteria
 
@@ -55,7 +55,7 @@ The behavior layer is silently dropped from non-web targets (print, email, plain
 - [ ] The emitted JS has no framework dependency and runs against the DOM produced by the structure layer.
 - [ ] A role recognized as a bundled accessible pattern (e.g., `.dialog`) auto-emits the correct ARIA attributes, keyboard handlers, and focus management without explicit author wiring.
 - [ ] An unrecognized role with a handler compiles, but the author is responsible for ARIA — strict mode warns if interactive markup lacks an accessible name.
-- [ ] On print, email, and plain targets, the `::: script` block produces no output.
+- [ ] On pdf, email, and plain targets, the `::: script` block produces no output.
 
 ## Open Questions
 

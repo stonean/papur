@@ -23,7 +23,7 @@ The formal specification ships as a set of markdown documents under `spec/` (sin
 - `spec/grammar.md` — EBNF (or PEG) for lexical and syntactic productions, including reserved words and identifier rules.
 - `spec/ast.md` — the canonical AST shape: node types, field types, structural invariants. Resolves the AST-shape open question in `system.md`.
 - `spec/static-semantics.md` — name resolution, namespace lookup, qualifier precedence, scope rules, computed-token evaluation, expressed as algorithms rather than prose.
-- `spec/dynamic-semantics.md` — per-AST-node emission rules indexed by target (web / print / email / plain).
+- `spec/dynamic-semantics.md` — per-AST-node emission rules indexed by target (web / pdf / email / plain).
 - `spec/css-subset.md` — the supported CSS and Sass feature set, with per-target compatibility notes.
 - `spec/errors.md` — error catalog with stable codes, message templates, and severity (strict / lenient / lint-only).
 - `spec/conformance/` — reference test corpus (input file + expected output per target).
@@ -37,7 +37,7 @@ The design specs under `specs/NNN-*/` remain the source of truth for *what* the 
 > - 001-file-format, 002-attribute-syntax, 003-semantic-elements
 > - 004-theming, 005-css-layer, 006-behavior-layer, 007-raw-html
 > - 008-includes, 009-multi-target
-> - 010-target-web, 011-target-print, 012-target-email, 013-target-plain
+> - 010-target-web, 011-target-pdf, 012-target-email, 013-target-plain
 > - 014-accessibility, 015-forms (deferred — see Open Questions)
 
 ## Gaps to Close
@@ -50,7 +50,7 @@ The design specs deliberately stop at design level. The formal spec MUST close e
 - **Pre-text vs. post-text** detection on roled headings — the exact tokenizer condition that distinguishes inline-attach from scope-open.
 - **Frontmatter merge** — same-key conflict rules beyond "later wins" when `---` YAML and `::: meta` coexist.
 - **Namespace resolution algorithm** — the precise local-first → global fallback procedure, including what counts as a "local" scope boundary.
-- **Variant qualifier precedence** — what wins when multiple variants apply simultaneously (e.g., `@dark @print`, `@reduced-motion @email`).
+- **Variant qualifier precedence** — what wins when multiple variants apply simultaneously (e.g., `@dark @pdf`, `@reduced-motion @email`).
 - **Computed-token arithmetic** — operator set, operator precedence, mixed-unit semantics, division-by-zero behavior.
 - **CSS subset boundary** — which Sass features are in scope (mixins, functions, control flow), which CSS features are blocked per target.
 - **Multiple blocks of same type** — resolution of the open question in 001 (single block per type, or merged across multiple).
@@ -62,7 +62,7 @@ The design specs deliberately stop at design level. The formal spec MUST close e
 - [ ] `spec/grammar.md` defines a complete EBNF (or equivalent) covering every fence type, role syntax, theme syntax, CSS subset, behavior DSL, and include directive.
 - [ ] `spec/ast.md` defines every AST node type with field types and structural invariants; the AST-shape open question in `system.md` is closed.
 - [ ] `spec/static-semantics.md` defines name resolution, namespace lookup, qualifier precedence, scope rules, and computed-token evaluation as algorithms.
-- [ ] `spec/dynamic-semantics.md` defines the emission rule for every AST node on every target (web, print, email, plain).
+- [ ] `spec/dynamic-semantics.md` defines the emission rule for every AST node on every target (web, pdf, email, plain).
 - [ ] `spec/css-subset.md` enumerates the supported CSS / Sass feature set with per-target compatibility.
 - [ ] `spec/errors.md` lists every error condition with a stable code, message template, and severity.
 - [ ] `spec/conformance/` contains at least one passing test per acceptance criterion across specs 001–014.

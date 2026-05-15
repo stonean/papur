@@ -8,7 +8,7 @@ The papur compiler turns a `.papur` source file into a target-agnostic AST, then
 source (.papur) ──▶ parser ──▶ AST ──▶ target emitter ──▶ output (HTML/CSS/text/...)
                                   │
                                   ├──▶ web emitter   ──▶ HTML + CSS
-                                  ├──▶ print emitter ──▶ HTML + print-CSS (or PDF)
+                                  ├──▶ pdf emitter   ──▶ tagged PDF (PDF/UA)
                                   ├──▶ email emitter ──▶ table-based HTML, inlined CSS
                                   └──▶ plain emitter ──▶ plain text
 ```
@@ -39,11 +39,11 @@ Every input file uses the `.papur` extension. Filename middle segments (`styles.
 Each target emitter is its own spec:
 
 - [010-target-web](010-target-web/spec.md) — HTML + CSS
-- [011-target-print](011-target-print/spec.md) — print-CSS or PDF
+- [011-target-pdf](011-target-pdf/spec.md) — tagged PDF, emitted directly from the AST
 - [012-target-email](012-target-email/spec.md) — table-based HTML, inlined CSS
 - [013-target-plain](013-target-plain/spec.md) — plain text
 
-The dispatch architecture, target-qualified content (`::: @web` blocks, `@print` qualifiers), and the behavior-drop rule for non-web targets are governed by [009-multi-target](009-multi-target/spec.md).
+The dispatch architecture, target-qualified content (`::: @web` blocks, `@pdf` qualifiers), and the behavior-drop rule for non-web targets are governed by [009-multi-target](009-multi-target/spec.md).
 
 ## Cross-Cutting Concerns
 

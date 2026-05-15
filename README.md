@@ -2,7 +2,7 @@
 
 A markdown-flavored markup language that compiles to semantic, accessible HTML, CSS, and beyond.
 
-papur takes a single `.papur` source and transpiles it to web (HTML + CSS), print, email-safe HTML, and plain text. It is designed for authors who want Markdown's simplicity with CSS's expressive power, without sacrificing semantic HTML or accessibility.
+papur takes a single `.papur` source and transpiles it to web (HTML + CSS), PDF, email-safe HTML, and plain text. It is designed for authors who want Markdown's simplicity with CSS's expressive power, without sacrificing semantic HTML or accessibility.
 
 > **Status:** pre-implementation. The language is being designed spec-first. See `specs/` for the feature specs.
 
@@ -14,7 +14,7 @@ papur takes a single `.papur` source and transpiles it to web (HTML + CSS), prin
 4. **Three parallel layers, keyed by role.** Structure (content), style (`::: css`), and behavior (`::: script`) all attach to the same role names.
 5. **Semantic and accessible by default.** Strict mode is the default. Lint rules ship enabled.
 6. **The compiler enforces standards, not preferences.** Accessibility (WCAG, ARIA, HTML semantics) is non-negotiable. Authoring style (design system architecture, naming conventions, two-tier tokens, etc.) is the author's call.
-7. **Multi-target via AST.** Same source compiles to web, print, email, plain text. Target-specific tweaks live alongside defaults in the same source.
+7. **Multi-target via AST.** Same source compiles to web, PDF, email, plain text. Target-specific tweaks live alongside defaults in the same source.
 8. **No runtime.** Behaviors compile to vanilla JS at build time. No framework dependency for output.
 
 ## Example

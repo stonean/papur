@@ -37,7 +37,7 @@ The email emitter rewrites the structural layer to the table-based idiom email c
 
 - `::: script` blocks.
 - `::: html` blocks (unless `@email`-qualified).
-- `::: @web` and `::: @print` qualified blocks.
+- `::: @web` and `::: @pdf` qualified blocks.
 - Modern CSS features unsupported in major email clients (custom properties, grid, modern color functions in some cases).
 
 ## What Stays
