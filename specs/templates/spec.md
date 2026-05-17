@@ -27,7 +27,7 @@ review:
      in the body — do not edit it by hand.
 
      Scenarios: when a spec section needs lower-level elaboration (edge cases, bug fixes,
-     detailed behavior), run /papur:elaborate to create a scenario file under
+     detailed behavior), run /papur:ask to record a scenario file under
      specs/{NNN-feature-name}/scenarios/.
 -->
 
@@ -50,7 +50,7 @@ At least one concrete, testable criterion is required before `/papur:clarify` wi
 <!-- Optional. Cite rule IDs (from rule files like specs/security-backend.md) that
      constrain the surface this spec touches. Citing rules here makes the cross-
      cutting requirements this spec depends on visible to reviewers and to
-     /papur:validate, which checks every cited ID against the loaded rule
+     /papur:analyze, which checks every cited ID against the loaded rule
      files. See §rules in the constitution for when a concern belongs in a rule
      vs an acceptance criterion vs a scenario.
 

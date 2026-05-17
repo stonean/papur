@@ -25,7 +25,7 @@ draft → clarified → planned → in-progress → done
 Two back-edges keep the lifecycle honest:
 
 - `/papur:ask` reverts a `clarified`, `planned`, or `in-progress` spec to `draft` when a new open question surfaces — `draft` is the only status that tolerates open questions. The next `/papur:clarify` resolves the question and the spec advances forward again.
-- `/papur:elaborate` reverts a `done` spec to `in-progress` when a new scenario is added — the scenario captures the change, the spec evolves with it.
+- `/papur:ask` reverts a `done` spec to `in-progress` when a new scenario is added (the scenario route) — the scenario captures the change, the spec evolves with it.
 
 Each feature lives in `specs/NNN-feature-name/` and progresses through these states by running the corresponding command.
 
@@ -41,21 +41,20 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | `/papur:clarify` | draft → clarified | Resolve open questions and advance a spec from draft to clarified. |
 | `/papur:plan` | clarified → planned | Create a technical plan and task breakdown for a clarified spec. |
 | `/papur:implement` | planned → in-progress → done | Execute implementation tasks for the targeted feature. |
-| `/papur:review` | blocks `done` (MUST violations) | Run a code review covering reuse, quality, security, efficiency, and simplicity; blocks `done` when MUST violations are present. |
-| `/papur:validate` | — | Check a feature's artifacts for consistency and cross-spec alignment. |
+| `/papur:review` | blocks `done` (MUST violations) | Audit code against rules — security, reuse, quality, efficiency, simplicity. Writes review.md; blocks done on MUST violations. |
+| `/papur:analyze` | — | Audit artifacts against each other — spec, plan, tasks, scenarios, frontmatter, dependencies, rule IDs. Read-only. |
 
 <!-- generated:commands-pipeline:end -->
 
-#### Elaborate (add precision)
+#### Refine
 
-<!-- generated:commands-elaborate:start -->
+<!-- generated:commands-refine:start -->
 
 | Command | Description |
 | --- | --- |
-| `/papur:ask` | Append an open question to the targeted spec or scenario. |
-| `/papur:elaborate` | Add a scenario to elaborate a section of the targeted feature. |
+| `/papur:ask` | Add a question or a scenario to the targeted spec (classifier-driven). |
 
-<!-- generated:commands-elaborate:end -->
+<!-- generated:commands-refine:end -->
 
 #### Brownfield (absorb existing reality)
 
@@ -63,7 +62,6 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 
 | Command | Description |
 | --- | --- |
-| `/papur:capture` | Create a skeleton spec for an existing feature in a brownfield project. |
 | `/papur:log` | Record a raw item to the inbox. |
 | `/papur:groom` | Walk the inbox and route each item to its proper home. |
 
