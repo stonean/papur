@@ -10,7 +10,7 @@ These are evaluation criteria, not implementation instructions. Use them to iden
 
 ### Technology
 
-- **Secure:** protect sensitive data through industry standards and best practices. See `specs/security-backend.md` and `specs/security-frontend.md` for enforceable rules.
+- **Secure:** protect sensitive data through industry standards and best practices. See `specs/rules/security-backend.md` and `specs/rules/security-frontend.md` for enforceable rules.
 - **Scalable:** design and implement to be dynamically scaled
 - **Learnable:** fast onboarding through clear patterns, documentation, and accessible codebase design
 - **Reliable:** graceful degradation and automatic recovery when components fail
@@ -93,12 +93,13 @@ specs/
 draft ──/clarify──▶ clarified ──/plan──▶ planned ──/implement──▶ in-progress ──[/review gate]──▶ done
 ```
 
-Forward edges only — `/clarify` raises status to `clarified`, `/plan` to `planned`, `/implement` to `in-progress` and then to `done`. The `in-progress → done` transition is gated by `/review`: `/implement` MUST NOT write `status: done` while the spec's `review.last-run` is unset or `review.blocking` is `true`. `/review` is a gate, not a state transition — it records findings and updates the `review:` frontmatter block, but does not change `status`. The gate composes with `/analyze` (which flags drifted `done` specs) and the shipped CI template (which fails PRs that bypass the local checks) per the **Design Principles** rule: never depend on human diligence. Two back-edges exist:
+Forward edges only — `/clarify` raises status to `clarified`, `/plan` to `planned`, `/implement` to `in-progress` and then to `done`. The `in-progress → done` transition is gated by `/review`: `/implement` MUST NOT write `status: done` while the spec's `review.last-run` is unset or `review.blocking` is `true`. `/review` is a gate, not a state transition — it records findings and updates the `review:` frontmatter block, but does not change `status`. The gate composes with `/analyze` (which flags drifted `done` specs) and the shipped CI template (which fails PRs that bypass the local checks) per the **Design Principles** rule: never depend on human diligence. Three back-edges exist:
 
 - **Backward via new questions** — `clarified` / `planned` / `in-progress` → `draft` when `/ask` records a new open question; the next `/clarify` resolves the question and the spec advances forward again. `draft` is the only status that tolerates open questions, so it is the destination; `/ask` performs the status mutation in the same write that records the question.
 - **Backward via new scenario** — `done` → `in-progress` when `/ask` records a scenario. The scenario's task is implemented and the spec returns to `done`.
+- **Backward via meaningful body edit** — `done` → `in-progress` when any artifact under `specs/{feature}/` is edited *meaningfully*. An edit is **mechanical** (no back-edge) iff every change in the diff is the same find-and-replace token substitution, applied uniformly across all live artifacts per the `AGENTS.md` rename rule's scope, and the substitution maps a deprecated label (slug, capability, command, identifier, parenthetical descriptor) to its current label. Anything else — new scope, changed semantics, factual corrections, restructuring, edits scoped to a single spec — is a **meaningful edit** and triggers the back-edge via the same `/ask` flow used for scenarios. The distinction is determinable from the diff alone, so the rule does not depend on author judgment.
 
-This avoids spec proliferation; scenarios evolve the existing spec rather than spawning a new one.
+This avoids spec proliferation; scenarios evolve the existing spec rather than spawning a new one. Spec bodies are living documents that represent current state — git history is the historical record of what was written when.
 
 #### The three cycles
 
@@ -170,13 +171,13 @@ Write code, tests, and migrations. Implementation follows the tasks list.
 
 #### Constants and configuration
 
-See `framework/rules/configuration.md` (`CFG-CONST-NNN` rules) for the enforceable rules covering centralized shared constants, module-local constants, and the no-bare-literals requirement for operator-tunable values. `/papur:analyze` enforces these rules.
+See `framework/rules/configuration-cross.md` (`CFG-CONST-NNN` rules) for the enforceable rules covering centralized shared constants, module-local constants, and the no-bare-literals requirement for operator-tunable values. `/papur:analyze` enforces these rules.
 
 <!-- §env-vars -->
 
 #### Environment variables
 
-See `framework/rules/configuration.md` (`CFG-ENV-NNN` rules) for the enforceable rules covering env-var defaults backed by named constants, `.env.example` completeness, fail-fast startup validation, and unit suffixes for time-valued variables. `/papur:analyze` enforces these rules.
+See `framework/rules/configuration-cross.md` (`CFG-ENV-NNN` rules) for the enforceable rules covering env-var defaults backed by named constants, `.env.example` completeness, fail-fast startup validation, and unit suffixes for time-valued variables. `/papur:analyze` enforces these rules.
 
 <!-- §bug-handling -->
 
@@ -252,7 +253,7 @@ Promotion is a user decision, not automated. The framework provides the pattern;
 
 A rule is an enforceable, citable requirement that applies across multiple features. Rules are the third artifact tier — alongside specs (feature-wide) and scenarios (situational), rules cover **cross-cutting** concerns the framework has opinions about regardless of which feature is being built (security, performance, concurrency, observability, accessibility, audit/compliance, data handling).
 
-Rule files ship under `specs/{rule-set}.md` and are referenced from feature specs by ID. The canonical example is `specs/security-backend.md`, whose rules (e.g., `BE-AUTHN-001`) any spec touching authentication can cite. `/papur:analyze` enforces rules — it loads each rule file, runs each rule's Verification step against feature artifacts, and reports gaps.
+Rule files ship under `specs/rules/{rule-set}.md` and are referenced from feature specs by ID. The canonical example is `specs/rules/security-backend.md`, whose rules (e.g., `BE-AUTHN-001`) any spec touching authentication can cite. `/papur:analyze` enforces rules — it loads each rule file, runs each rule's Verification step against feature artifacts, and reports gaps.
 
 #### Rule format (summary)
 
@@ -282,6 +283,22 @@ Indicators are evaluative, not mechanical. The same judgment discipline applies 
 - The concern is **feature-wide** (one feature, broad property) → add an acceptance criterion or section to that spec.
 - An existing rule already covers the concern → cite the existing rule from the spec rather than creating a new one.
 
+#### Filename suffix
+
+Rule filenames signal the surface a rule applies to via a closed-suffix convention. Every `framework/rules/*.md` file MUST end in exactly one of:
+
+- `-backend.md` — loaded for backend stacks
+- `-frontend.md` — loaded for frontend stacks
+- `-cross.md` — loaded for all stacks (cross-cutting)
+
+The suffix is the surface signal `/papur:review` and `/papur:analyze` use to derive rule-file selection without a hardcoded allowlist. `/papur:review` filters discovered files by the project's detected stack; `/papur:analyze` loads every discovered file regardless of stack (citation verification spans surfaces).
+
+Enforcement is two-layered. In `govern`'s own repository, `scripts/lint-rule-filenames.sh` fails CI on any file that violates the closed-suffix policy. In adopter repositories — where the lint does not run — a rule file with an unrecognized suffix loads for every stack and emits a one-line stdout warning (`rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md`). The default is "load + warn," never "silent skip."
+
+#### Project-level opt-out
+
+A project may exclude a stack-selected rule file from `/papur:review` by listing it in `.govern.toml` `[[review.disabled-rule-files]]` with a mandatory `reason` — the reason is the audit trail for the override, surfaced on stdout at the start of every run. The opt-out is project-wide and applies to whole files; per-`(rule, file)` exceptions remain the job of `/papur:review --waive`. Schema and behavior are documented in [`framework/commands/review.md`](commands/review.md).
+
 #### Lifecycle
 
 - Rule IDs are permanent. Once assigned, an ID is never renumbered, even if the rule moves within the file or is edited.
@@ -294,7 +311,7 @@ See `specs/008-security-rules/data-model.md` for the full ID-stability invariant
 
 | Tier | Scope | Artifact |
 | --- | --- | --- |
-| **Rule** | Cross-cutting (applies across many features) | A rule file under `specs/{rule-set}.md`, cited by ID from the specs that depend on it |
+| **Rule** | Cross-cutting (applies across many features) | A rule file under `specs/rules/{rule-set}.md`, cited by ID from the specs that depend on it |
 | **Spec / acceptance criterion** | Feature-wide (one feature, broad property) | A section or AC in the feature's `spec.md` |
 | **Scenario** | Situational (a specific condition with concrete behavior) | A file in the feature's `scenarios/` directory |
 
@@ -471,12 +488,6 @@ When multiple commands distribute or reference the same set of files (e.g., `/go
 - As a registry both commands read.
 
 Two commands that copy-paste the same manifest into their own bodies are guaranteed to drift over time. Consolidate or accept that drift is the rule, not the exception.
-
-### Done specs are frozen archaeology
-
-`done` specs reflect the world at merge time. The framework will continue to evolve; done specs will not be rewritten to match. Drift between a done spec's body and the current framework is expected — handle it with **signposts at the top of the spec**, not by rewriting the body. Plan and tasks files in done-spec directories follow the same rule.
-
-A signpost names what changed and points readers at the current source of truth. It does not edit history.
 
 <!-- §pipeline-boundaries -->
 

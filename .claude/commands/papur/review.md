@@ -3,33 +3,45 @@ description: Audit code against rules — security, reuse, quality, efficiency, 
 argument-hint: "[--all] [--fix] [feature]"
 ---
 
-# /gov:review
+# /papur:review
 
 Run a comprehensive code review against the targeted feature's implementation,
 covering reuse, quality, security, efficiency, and simplicity. Produces a
 `review.md` artifact alongside the spec. **Blocks the spec from reaching `done`
 when MUST violations are present.**
 
-`/gov:review` audits **code against rules**. It is complementary to `/gov:analyze`,
+`/papur:review` audits **code against rules**. It is complementary to `/papur:analyze`,
 which audits **artifacts against each other**. Both should pass before a spec
 advances to `done`.
 
 ## Inputs
 
-- **Target** — the current `/gov:target` feature, or every feature with
+- **Target** — the current `/papur:target` feature, or every feature with
   status `in-progress` or `done` when invoked with `--all`.
-- **Rules** — `framework/rules/security-backend.md` and
-  `framework/rules/security-frontend.md` are loaded by reference. RFC 2119
-  language is authoritative: **MUST/MUST NOT** are blocking violations,
-  **SHOULD/SHOULD NOT** are advisory.
+- **Rules** — every file under the project's rule-file directory
+  (`framework/rules/` in govern's own repo, `specs/rules/` in adopter
+  projects) selected by the suffix-based discovery in §Behavior step 5,
+  loaded by reference. RFC 2119 language is authoritative:
+  **MUST/MUST NOT** are blocking violations, **SHOULD/SHOULD NOT** are
+  advisory.
 - **Scope** — files referenced by the target's `plan.md` under `Affected Files`,
   plus any files modified since the spec advanced to `in-progress` (whichever
   set is larger).
-- **Config** — `.govern.toml` `[review] tech-stack-verified` (boolean,
-  default `false`): when `true`, the tech-stack alignment check (see
-  Behavior step 1) is skipped on every run until the operator clears the
-  key. Set automatically (with operator confirmation) on the first
-  successful alignment check.
+- **Config** — two `.govern.toml` keys influence this command:
+  - `[review] tech-stack-verified` (boolean, default `false`): when
+    `true`, the tech-stack alignment check (see Behavior step 1) is
+    skipped on every run until the operator clears the key. Set
+    automatically (with operator confirmation) on the first successful
+    alignment check.
+  - `[[review.disabled-rule-files]]` (array-of-tables, default empty):
+    each entry has a required `file` field (basename of a file in the
+    rule-file directory — `framework/rules/` here, `specs/rules/` in
+    adopter projects — e.g., `"accessibility-frontend.md"`) and a
+    required `reason` field (free-text justification; trimmed length
+    ≥ 16 Unicode codepoints). Files listed here are excluded from
+    rule-file selection regardless of stack detection. Consulted in
+    Behavior step 5. Reason is mandatory — it is the audit trail for
+    the override.
 
 ## Flags
 
@@ -46,14 +58,14 @@ advances to `done`.
 
 ## Pipeline position
 
-`/gov:review` runs after `/gov:implement` has produced code and before the spec
+`/papur:review` runs after `/papur:implement` has produced code and before the spec
 can advance to `done`. The recommended sequence is:
 
 ```text
-/gov:implement   →   /gov:review   →   /gov:analyze   →   spec status: done
+/papur:implement   →   /papur:review   →   /papur:analyze   →   spec status: done
 ```
 
-`/gov:implement` MUST NOT mark a spec `done` while the target's `review.md`
+`/papur:implement` MUST NOT mark a spec `done` while the target's `review.md`
 records `must-violations: > 0`. See [Blocking semantics](#blocking-semantics).
 
 ## Behavior
@@ -62,8 +74,8 @@ For each targeted feature, in order:
 
 ### 1. Resolve target and scope
 
-1. Resolve the working feature from `--all` or the current `/gov:target`.
-   If neither yields a target, halt with `no target — run /gov:target first`.
+1. Resolve the working feature from `--all` or the current `/papur:target`.
+   If neither yields a target, halt with `no target — run /papur:target first`.
 2. Read the spec frontmatter. If `status` is not in `{in-progress, done}`,
    halt with `review only runs against in-progress or done specs`.
 3. Build the file scope per [Inputs](#inputs). If the resolved scope is
@@ -84,18 +96,104 @@ For each targeted feature, in order:
      (Y/n)"_. On `Y`, write `[review] tech-stack-verified = true` to
      `.govern.toml`. On `n` or skip, the check runs again on the next
      invocation. To re-run the check after a stack change, the operator
-     removes the line manually — `/gov:review` does not auto-reset.
-5. Select rule files per the (now-verified) tech stack: load
-   `security-backend.md` for backend stacks, `security-frontend.md` for
-   frontend, and both for full-stack projects.
+     removes the line manually — `/papur:review` does not auto-reset.
+5. Discover rule files by suffix. List `framework/rules/*.md` in govern's
+   own repository, or `specs/rules/*.md` in adopter projects. For each
+   file, classify by basename suffix:
+   - `*-backend.md` → backend surface
+   - `*-frontend.md` → frontend surface
+   - `*-cross.md` → cross-cutting (applies to every stack)
+   - anything else → unrecognized — load for every stack and emit one
+     stdout line per file:
+
+     ```text
+     rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md
+     ```
+
+   Filter the recognized set by the detected stack from step 4 (keep the
+   matching surface, keep every `*-cross.md`); keep every unrecognized
+   file unconditionally.
+
+   Then apply the **disabled-rule-files filter**. Read `.govern.toml`
+   `[[review.disabled-rule-files]]` (see [Inputs](#inputs)). For each
+   entry, in list order:
+
+   - **Drop + notice (stack-selected match).** `file` matches the
+     basename of a file currently in the post-stack-filter set. Remove
+     it from the set and emit one line:
+
+     ```text
+     disabled-rule-file: <filename> — <reason> (.govern.toml)
+     ```
+
+     Collapse internal whitespace in `reason` (including newlines from
+     TOML multi-line strings) to single spaces before emitting — the
+     notice is single-line by contract.
+
+   - **No-op notice (non-stack-selected match).** `file` matches a
+     basename in the rule-file directory but the file was NOT in the
+     post-stack-filter set (different surface). Emit one line and
+     change nothing:
+
+     ```text
+     disabled-rule-file (no-op): <filename> not selected by stack detection
+     ```
+
+     This is honest about state — the entry is currently a no-op,
+     becomes load-bearing if the project's stack changes later.
+
+   - **Unknown warning.** `file` does not match any basename in the
+     rule-file directory. Emit one line and change nothing:
+
+     ```text
+     unknown disabled-rule-file: <filename> (no such file in the rule-file directory)
+     ```
+
+     This covers renamed/moved files; not a fatal error.
+
+   - **Malformed warning.** Entry is missing `file` or `reason`, or
+     `reason`'s trimmed length is < 16 Unicode codepoints. Skip the
+     entry (no file is dropped) and emit one line naming the offending
+     index (same pattern as §Malformed and duplicate waivers below):
+
+     ```text
+     malformed disabled-rule-file at review.disabled-rule-files[N]: <reason>
+     ```
+
+     The entry is NOT auto-removed; the operator cleans it up.
+
+   - **Duplicate warning.** Same `file` listed twice. Only the first
+     entry applies; each subsequent duplicate emits one line and is
+     not auto-pruned:
+
+     ```text
+     duplicate disabled-rule-file: <filename> — entry [N] ignored
+     ```
+
+   All four warning forms emit to stdout and **do not affect the exit
+   code**. `/papur:review`'s exit status is driven exclusively by MUST
+   violations (see [Output](#output)). `.govern.toml` hygiene is a
+   separate concern.
+
+   Finally, emit a single stdout line naming what was selected:
+
+   ```text
+   loading rule files: <comma-separated basenames>
+   ```
+
+   Disabled files are excluded from this list. The notice fires AFTER
+   all disabled-rule-file lines, so a normal run reads top-down as:
+   any `disabled-rule-file: …` notices, then `loading rule files: …`.
+   This is the discoverability surface — adopters can confirm which
+   files were considered without parsing the report.
 
 ### 2. Load rules
 
-Load these files inline as the authoritative review criteria:
+Load these inputs inline as the authoritative review criteria:
 
-- `framework/rules/security-backend.md` (if backend stack present)
-- `framework/rules/security-frontend.md` (if frontend stack present)
-- Any other `framework/rules/*.md` referenced from `AGENTS.md`
+- Every rule file selected by the suffix-based discovery in step 5
+- Any rule file outside the rule-file directory (e.g., `docs/rules/internal-api.md`)
+  referenced from `AGENTS.md` — see [Notes for adopters](#notes-for-adopters)
 - `AGENTS.md` `Code Style`, `Testing`, `Gotchas`, and `Boundaries` sections
 - The target spec's acceptance criteria and any `scenarios/*.md` files
 
@@ -152,8 +250,7 @@ mark the finding `auto-fixable`.
 
 ### 4. Write `review.md`
 
-Write the report to `specs/NNN-feature/review.md` (or
-`specs/NNN-feature/scenarios/SLUG/review.md` when the target is a scenario).
+Write the report to `specs/NNN-feature/review.md`. A scenario-targeted run still writes to the same spec-level path; the `scenario:` frontmatter field records which scenario was reviewed and `reviewed-against` records the commit. Re-running review (scenario- or feature-targeted) supersedes the prior `review.md` wholesale.
 
 ```markdown
 ---
@@ -194,13 +291,13 @@ Each finding follows this shape:
 ### MUST: <rule-id> — <one-line summary>
 
 - **File**: `path/to/file.ts:42-55`
-- **Rule**: <verbatim rule text from framework/rules/...>
+- **Rule**: <verbatim rule text from the rule file (framework/rules/... or specs/rules/...)>
 - **Finding**: <one to three sentences>
 - **Auto-fixable**: yes | no
 - **Suggested fix**: <code block or prose>
 ```
 
-The report is regenerated on every `/gov:review` run — never appended.
+The report is regenerated on every `/papur:review` run — never appended.
 Findings the user has explicitly waived (see [Waivers](#waivers)) carry across
 runs as long as their anchor (rule + file) is still valid.
 
@@ -238,18 +335,18 @@ read.
 A spec MUST NOT advance from `in-progress` to `done` while its frontmatter
 records `review.blocking: true`. This is enforced as follows:
 
-1. **`/gov:implement`** — before marking `status: done`, reads
+1. **`/papur:implement`** — before marking `status: done`, reads
    `review.blocking`. If `true` (or `review.last-run` is missing), halts with:
 
    ```text
    blocked: spec has N MUST violation(s) — see specs/NNN-feature/review.md
-   resolve the violations and re-run /gov:review, or waive with /gov:review --waive
+   resolve the violations and re-run /papur:review, or waive with /papur:review --waive
    ```
 
-2. **`/gov:analyze`** — adds a check to its existing audit: if the spec's
+2. **`/papur:analyze`** — adds a check to its existing audit: if the spec's
    status is `done` but `review.blocking` is `true` or `review.last-run` is
    missing, this is a validation failure. Composable with `--fix`:
-   `/gov:analyze --fix` reverts `done` → `in-progress` and emits a notice
+   `/papur:analyze --fix` reverts `done` → `in-progress` and emits a notice
    (it never silently downgrades; the notice is the point).
 
 3. **CI hook** — the shipped GHA template at
@@ -263,7 +360,7 @@ mechanisms rather than relying on any single one — consistent with the
 
 ## Blocking message
 
-Emitted by `/gov:review` when tech-stack alignment fails (missing/empty
+Emitted by `/papur:review` when tech-stack alignment fails (missing/empty
 `AGENTS.md` `Tech Stack` section, or documented stack inconsistent with
 implementation):
 
@@ -273,7 +370,7 @@ blocked: tech-stack alignment failed — AGENTS.md Tech Stack {missing | inconsi
   expected: <stack inferred from scope, e.g., "TypeScript + React frontend">
   documented: <AGENTS.md Tech Stack contents, or "(empty)">
 
-reconcile AGENTS.md Tech Stack with the implementation, then re-run /gov:review.
+reconcile AGENTS.md Tech Stack with the implementation, then re-run /papur:review.
 to skip this check on future runs after manual reconciliation, add
 [review] tech-stack-verified = true to .govern.toml.
 ```
@@ -283,7 +380,7 @@ to skip this check on future runs after manual reconciliation, add
 A MUST violation can be waived only with explicit, recorded justification:
 
 ```text
-/gov:review --waive <rule-id> --reason "<text>"
+/papur:review --waive <rule-id> --reason "<text>"
 ```
 
 This appends to the target spec's frontmatter:
@@ -300,7 +397,7 @@ review:
 
 Waived findings drop out of `must-violations` count and into a separate
 `waived-violations` count. They appear in `review.md` under the **Waived
-findings** section. They survive across `/gov:review` runs as long as the
+findings** section. They survive across `/papur:review` runs as long as the
 rule ID and file location still match; if either changes, the waiver expires
 and the finding re-blocks. Line numbers are not part of the waiver anchor —
 the contract is `(rule, file)`, so code moving within the file does not
@@ -308,7 +405,7 @@ expire the waiver.
 
 ### Per-run waiver processing
 
-At the start of every `/gov:review` run, before counting findings into
+At the start of every `/papur:review` run, before counting findings into
 `must-violations`, walk `review.waivers` and process each entry:
 
 1. **Apply** when the file exists at the anchored path AND the rule still
@@ -350,8 +447,8 @@ At the start of every `/gov:review` run, before counting findings into
 
 The `review.waivers` list follows the §text-first-artifacts open-schema
 rule. Adopters MAY add fields (e.g., `co-waived-by`, `approved-by-team`,
-`ticket`) to enforce org-specific waiver policy in their own CI; `/gov:review`
-and `/gov:analyze` will not error on unknown fields.
+`ticket`) to enforce org-specific waiver policy in their own CI; `/papur:review`
+and `/papur:analyze` will not error on unknown fields.
 
 ## Auto-fix scope
 
@@ -372,7 +469,7 @@ When in doubt, leave the finding unfixed and let the user apply the
 Stdout summary (always), followed by the path to `review.md`:
 
 ```text
-/gov:review — 042-example-feature
+/papur:review — 042-example-feature
 
   security    ✓ 0 MUST   2 SHOULD
   reuse       ✓ 0 MUST   1 SHOULD
@@ -387,7 +484,7 @@ Stdout summary (always), followed by the path to `review.md`:
 When MUST violations are present:
 
 ```text
-/gov:review — 042-example-feature
+/papur:review — 042-example-feature
 
   security    ✗ 2 MUST   1 SHOULD
   reuse       ✓ 0 MUST   0 SHOULD
@@ -398,8 +495,8 @@ When MUST violations are present:
   blocking: yes — 3 MUST violations
   report:   specs/042-example-feature/review.md
 
-  spec cannot advance to done. Resolve violations and re-run /gov:review,
-  or run /gov:review --waive <rule-id> --reason "..." for each waivable finding.
+  spec cannot advance to done. Resolve violations and re-run /papur:review,
+  or run /papur:review --waive <rule-id> --reason "..." for each waivable finding.
 ```
 
 Exit code: `0` when not blocking, `1` when blocking. Allows CI to gate on the
@@ -407,20 +504,42 @@ exit code without parsing the report.
 
 ## Idempotency
 
-Re-running `/gov:review` against an unchanged target reproduces an identical
+Re-running `/papur:review` against an unchanged target reproduces an identical
 `review.md` (modulo `reviewed-at` and `reviewed-against`). This is a
 derive-don't-ask invariant: review output is a function of code + rules,
 never of session state.
 
 ## Notes for adopters
 
-- Projects that customize `framework/rules/security-{backend,frontend}.md`
-  pin them in `.govern.toml` `[pinned] files` to prevent `/govern` from
-  overwriting their additions. `/gov:review` reads whatever is on disk —
-  pinned or not.
-- Projects on a stack not covered by the shipped rule files should add
-  their own at `framework/rules/<domain>.md` and reference them from
-  `AGENTS.md`. `/gov:review` automatically loads anything in
-  `framework/rules/` that's referenced from `AGENTS.md`.
+- Projects that customize shipped rule files (e.g.,
+  `specs/rules/security-backend.md`) pin them in `.govern.toml`
+  `[pinned] files` to prevent `/govern` from overwriting their additions.
+  `/papur:review` reads whatever is on disk — pinned or not.
+- Files inside the rule-file directory (`specs/rules/` in adopter
+  projects; `framework/rules/` in govern's own repo) are auto-discovered
+  by directory walk (see §Behavior step 5). No `AGENTS.md` reference is
+  required. Adding a new file at `specs/rules/<domain>-{backend,frontend,cross}.md`
+  with a recognized suffix is the only step needed; the suffix selects
+  which stacks load it.
+- The `AGENTS.md` rule-file reference survives strictly for adopter-local
+  rule files placed **outside** `specs/rules/` — e.g.,
+  `docs/rules/internal-api.md`. The framework cannot directory-walk
+  arbitrary adopter paths, so an explicit `AGENTS.md` reference is the
+  discovery signal for these files.
+- A rule file with an unrecognized suffix loads for every stack and
+  emits a one-line stdout warning (see §Behavior step 5). The default
+  is "load + warn," never "silent skip." Rename to one of the closed
+  suffixes — `-backend.md`, `-frontend.md`, `-cross.md` — to silence
+  the warning.
+- A rule file can be explicitly excluded from a given project's review
+  via `.govern.toml` `[[review.disabled-rule-files]]` (see
+  [Inputs](#inputs) for the schema and §Behavior step 5 for the
+  filter behavior). The override is project-wide and requires a
+  mandatory `reason` — the reason is the audit trail. Use this when
+  the stack-derived selection is correct (the rule file applies) but
+  the team is not yet ready to enforce that file's rules (e.g., an
+  internal admin UI that has not adopted full WCAG AA). Waivers
+  remain the right tool for individual `(rule, file)` exceptions; the
+  opt-out is for whole-file deferrals.
 - The five-dimension model is fixed. Domain-specific concerns (accessibility,
   i18n, licensing) belong in additional rule files, not new passes.

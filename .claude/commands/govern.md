@@ -45,8 +45,8 @@ The registry lists every supported agent. Per-agent paths and behaviors are deri
 
 | `key` | `name` | `config_dir` | `settings_template` | `rules_file_note` |
 | --- | --- | --- | --- | --- |
-| `claude` | Claude Code | `.claude` | `{ "permissions": { "allow": ["Bash(curl *)", "Bash(ls *)", "Bash(tar *)", "Bash(mktemp *)", "Read(/private/var/folders/**/T/govern-*/**)", "Read(//private/var/folders/**/T/govern-*/**)", "Read(/var/folders/**/T/govern-*/**)", "Read(//var/folders/**/T/govern-*/**)", "Read(/tmp/govern-*/**)", "Read(//tmp/govern-*/**)"], "deny": [] } }` | Claude Code reads `CLAUDE.md` natively. |
-| `auggie` | Auggie | `.augment` | `{ "toolPermissions": [ { "toolName": "launch-process", "shellInputRegex": "^curl ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^ls ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^tar ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^mktemp ", "permission": { "type": "allow" } } ] }` | Auggie reads `CLAUDE.md` natively — no second rules file is needed. |
+| `claude` | Claude Code | `.claude` | `{ "permissions": { "allow": ["Bash(curl *)", "Bash(ls *)", "Bash(tar *)", "Bash(mktemp *)", "Bash(git status *)", "Bash(git config *)", "Bash(chmod *)", "Bash(awk *)", "Read(/private/var/folders/**/T/govern-*/**)", "Read(//private/var/folders/**/T/govern-*/**)", "Read(/var/folders/**/T/govern-*/**)", "Read(//var/folders/**/T/govern-*/**)", "Read(/tmp/govern-*/**)", "Read(//tmp/govern-*/**)"], "deny": [] } }` | Claude Code reads `CLAUDE.md` natively. |
+| `auggie` | Auggie | `.augment` | `{ "toolPermissions": [ { "toolName": "launch-process", "shellInputRegex": "^curl ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^ls ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^tar ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^mktemp ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git status ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git config ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^chmod ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^awk ", "permission": { "type": "allow" } } ] }` | Auggie reads `CLAUDE.md` natively — no second rules file is needed. |
 
 ### Derived values
 
@@ -218,11 +218,42 @@ warning: specs/{NNN-feature}/spec-and-plan.md kept; pipeline commands will fail 
 
 Report `migrated N spec-and-plan.md files` in the post-scaffolding output when N > 0; omit the line when N = 0. The check is idempotent — finds nothing on second run. Files at `status: done` are also renamed (the rename is just a filename change; the body and frontmatter are unchanged, so the frozen-archaeology rule is preserved by the byte-for-byte identity of the file content).
 
+### Rule files: relocate to `specs/rules/`
+
+Rule files installed in adopter projects live under `specs/rules/{rule-set}.md` so the top-level `specs/` directory stays focused on feature spec directories (`specs/NNN-*/`), `inbox.md`, `README.md`, and the seed system files. The bootstrap manifest's rule-file rows write to `specs/rules/`. Adopters scaffolded before this change have rule files at `specs/{rule-set}.md`, which `/{project}:review` and `/{project}:analyze` would no longer discover (the discovery walk targets `specs/rules/*.md`).
+
+This migration subsumes the earlier `configuration.md` → `configuration-cross.md` rename (closed-suffix policy, spec 024): when the legacy `specs/configuration.md` is found, it is renamed **and** relocated in one move.
+
+Walk the top level of `specs/` for files matching either:
+
+- `configuration.md` (pre-closed-suffix layout)
+- `*-backend.md`, `*-frontend.md`, or `*-cross.md` (closed-suffix rule files at the `specs/` root)
+
+For each match, compute the destination:
+
+- `specs/configuration.md` → `specs/rules/configuration-cross.md`
+- otherwise → `specs/rules/{basename}`
+
+Skip any source listed in `.govern.toml` `pinned.files` (path comparison after placeholder resolution) and emit one line: `warning: {source} is pinned; leaving in place — /{project}:review and /{project}:analyze will not discover it until moved manually.`
+
+Skip any source whose destination already exists in `specs/rules/` and emit one line: `warning: {destination} already exists; skipping relocation of {source}.`
+
+If at least one eligible move remains, prompt once:
+
+```text
+Found N legacy rule file(s) at the specs/ root.
+Move to specs/rules/? (Y/n)
+```
+
+On confirm, create `specs/rules/` (if missing) and rename each eligible file via `mv` (or `git mv` when the source is tracked, so the rename is recorded). On decline, emit one warning per skipped file: `warning: {source} kept; /{project}:review and /{project}:analyze will not discover it until moved manually.`
+
+Report `relocated N rule file(s) → specs/rules/` in the post-scaffolding output when N > 0; omit the line otherwise. The check is idempotent — finds nothing on the next run. Rule IDs (`BE-AUTHN-*`, `FE-XSS-*`, `CFG-CONST-*`, etc.) are content-anchored and unchanged by the relocation; every existing citation continues to resolve.
+
 ## Project Configuration
 
 `.govern.toml` is the project's configuration and persisted-decisions store. If the file exists, read it before processing the file manifest. The file is optional — if it does not exist, use default behavior for every key. If the file exists but is malformed (TOML parse error), abort the run with a clear error rather than silently proceeding.
 
-The file is a flat collection of top-level sections. There is no umbrella namespace; each section is keyed to the thing it governs. The two sections `/govern` reads today:
+The file is a flat collection of top-level sections. There is no umbrella namespace; each section is keyed to the thing it governs. The sections that may appear in `.govern.toml`:
 
 ```toml
 [pinned]
@@ -240,11 +271,27 @@ files = [
 # Code Review, Deployment). Created lazily by /govern when the user picks
 # "Skip and don't ask again" at the prompt.
 declined_categories = ["Linting", "Formatting"]
+
+# Consumed by /gov:review (not /govern itself). Excludes rule files from
+# /gov:review's selection regardless of stack detection. The `reason` field
+# is mandatory (trimmed length ≥ 16 Unicode codepoints) and is the audit
+# trail for the override. Listed here for schema reference; uncomment and
+# edit to use.
+#
+# [[review.disabled-rule-files]]
+# file = "accessibility-frontend.md"
+# reason = "Internal admin UI — WCAG AA enforcement deferred to Q3"
+#
+# [[review.disabled-rule-files]]
+# file = "api-backend.md"
+# reason = "Pre-OpenAPI; revisit after schema lands (PROJ-1234)"
 ```
 
 `pinned.files` — any file listed that would normally use `update` strategy is treated as `skip` instead. Report pinned files in the post-scaffolding summary.
 
 `workflows.declined_categories` — categories listed here suppress the per-category workflow recommendation prompt entirely (see the **Workflow recommendation** flow below). Entries that don't match any canonical category name are reported once each in the post-scaffolding summary as `unrecognized workflow decline: "{value}" (in .govern.toml)` but do not abort the run.
+
+`review.disabled-rule-files` — array-of-tables consumed by `/gov:review` at rule-file selection time (see [`framework/commands/review.md`](../commands/review.md) §Inputs and §Behavior step 5). `/govern` does not read this key; it is documented here so adopters see the full `.govern.toml` schema in one place.
 
 The full schema (allowed values, case-insensitive matching, empty-section behavior, future-section guidance) is declared in [`specs/019-config-decisions/data-model.md`](../../specs/019-config-decisions/data-model.md).
 
@@ -388,9 +435,12 @@ These files are scaffolded **once per `/govern` invocation**, regardless of how 
 | Source Path | Destination Path |
 | --- | --- |
 | `framework/constitution.md` | `constitution.md` |
-| `framework/rules/security-backend.md` | `specs/security-backend.md` |
-| `framework/rules/security-frontend.md` | `specs/security-frontend.md` |
-| `framework/rules/configuration.md` | `specs/configuration.md` |
+| `framework/rules/accessibility-frontend.md` | `specs/rules/accessibility-frontend.md` |
+| `framework/rules/api-backend.md` | `specs/rules/api-backend.md` |
+| `framework/rules/configuration-cross.md` | `specs/rules/configuration-cross.md` |
+| `framework/rules/performance-frontend.md` | `specs/rules/performance-frontend.md` |
+| `framework/rules/security-backend.md` | `specs/rules/security-backend.md` |
+| `framework/rules/security-frontend.md` | `specs/rules/security-frontend.md` |
 | `framework/bootstrap/hooks/govern-pre-commit` | `.githooks/govern-pre-commit` |
 | `.markdownlint-cli2.jsonc` | `.markdownlint-cli2.jsonc` |
 | `framework/templates/spec/spec.md` | `specs/templates/spec.md` |
@@ -434,7 +484,7 @@ Run a one-time security audit when the project newly receives a security rule fi
 
 Run the audit only when **both** conditions hold after the **Shared Files** manifest pass has completed:
 
-1. At least one of `specs/security-backend.md` or `specs/security-frontend.md` was **newly created** by the manifest pass (the destination file did not exist before this run). A file that was merely updated or unchanged does not trigger the audit.
+1. At least one of `specs/rules/security-backend.md` or `specs/rules/security-frontend.md` was **newly created** by the manifest pass (the destination file did not exist before this run). A file that was merely updated or unchanged does not trigger the audit.
 2. The project contains at least one feature spec directory under `specs/` matching the `NNN-*` pattern (zero-padded, three-digit prefix followed by a hyphen and a slug).
 
 If either condition fails, skip this section silently — no output, no finding, no inbox entry. This covers the two routine cases:
@@ -446,7 +496,7 @@ If either condition fails, skip this section silently — no output, no finding,
 
 For each rule file that passed the trigger:
 
-1. Read the file from its destination path (`specs/security-backend.md` or `specs/security-frontend.md`).
+1. Read the file from its destination path (`specs/rules/security-backend.md` or `specs/rules/security-frontend.md`).
 2. Apply the same integrity checks `/{project}:analyze` uses for the security-rule check section: well-formed level-3 headings of the form `### {ID}`, the four required fields (Statement, Rationale, Verification, Source), an ID matching `{FE|BE}-{CATEGORY}-{NNN}`, and no duplicate IDs within the file.
 3. If a file fails any integrity check, report `Security audit: {path} failed to load — {reason}; skipping audit for this file.` and continue with the other rule file (if applicable). Do not abort the surrounding `govern` run.
 

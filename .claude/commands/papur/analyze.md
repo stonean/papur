@@ -44,7 +44,7 @@ If `--all` is not present, use the feature identifier if provided, otherwise fal
 
 3. Invoke `traverse-deps` (MCP: `traverse-deps`) against the feature to verify each dependency directory exists and carries a compatible status. Missing dependencies are blocking; incompatible statuses are blocking when this spec is at clarified or later.
 
-4. Invoke `resolve-anchor` (MCP: `resolve-anchor`) against the spec path to confirm every section reference of the form §anchor resolves to a corresponding marker comment. Unresolved anchors are advisory — they usually indicate the constitution was renamed or restructured without updating callers. Otherwise, fall back to the markdown-only path.
+4. Invoke `resolve-anchor` (MCP: `resolve-anchor`) against the spec path to confirm every section reference of the form `§<name>` resolves to a corresponding marker comment. Unresolved anchors are advisory — they usually indicate the constitution was renamed or restructured without updating callers. Otherwise, fall back to the markdown-only path.
 
 5. Invoke `check-rule-ids` (MCP: `check-rule-ids`) against the spec path with the project's rule files. Cited rule IDs that are missing are blocking; cited rule IDs marked deprecated are advisory. Otherwise, follow the markdown-only path.
 
@@ -56,7 +56,11 @@ If `--all` is not present, use the feature identifier if provided, otherwise fal
 
 9. <!-- llm:assessSpecQuality --> For every loaded SHOULD-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. SHOULD-tier findings join the Advisory tier in the rendered report. Otherwise, fall back to the markdown-only path.
 
-10. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec whose review block has drifted to blocking — see the Review state drift section in the markdown-only reference below.
+<!-- audit:ignore-promotion -->
+10. Parse the spec body for a `## Applicable Rules` section and collect every rule ID cited there. For each cited ID that did **not** appear in the set of rules whose Verification triggers fired in steps 8 or 9, emit an advisory finding: `Applicable Rules citation does not fire: {rule-id} is listed under ## Applicable Rules, but the rule's Verification trigger did not fire against any spec artifact. Either remove the citation, or extend the spec to bring the cited surface into scope.` Skip this step when the spec has no `## Applicable Rules` section. Citations whose IDs do not resolve to any loaded rule are handled earlier in step 5 and not reprocessed here. See **Applicable Rules citation consistency** in the markdown-only reference for the full semantics and the promotion criterion that governs when this check graduates from advisory to blocking.
+
+<!-- audit:ignore-promotion -->
+11. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec whose review block has drifted to blocking — see the Review state drift section in the markdown-only reference below.
 
 ## Markdown-only reference
 
@@ -121,24 +125,32 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 
 For each spec at `status: done`, read the spec's frontmatter `review:` block:
 
-- `review.last-run` is set to a non-null timestamp. If the `review:` block is **present** but `last-run` is missing or `null`, report `Review drift: done spec missing review — run /gov:review` (**blocking**)
+- `review.last-run` is set to a non-null timestamp. If the `review:` block is **present** but `last-run` is missing or `null`, report `Review drift: done spec missing review — run /papur:review` (**blocking**)
 - `review.blocking` is `false`. If `true`, report `Review drift: done spec has unresolved MUST violations — see review.md` (**blocking**)
 
-**Grandfather rule.** A `done` spec whose frontmatter has no `review:` block at all is treated as pre-`/gov:review` and exempt from this check. The block is added by the spec template (so every newly-scaffolded spec ships with it) and by `/gov:review` on first run; its absence on a done spec means the spec reached done before `/gov:review` existed. Adopters who want retroactive review run `/gov:review` against the spec to populate the block, after which the spec is subject to the drift check on every subsequent analyze.
+**Grandfather rule.** A `done` spec whose frontmatter has no `review:` block at all is treated as pre-`/papur:review` and exempt from this check. The block is added by the spec template (so every newly-scaffolded spec ships with it) and by `/papur:review` on first run; its absence on a done spec means the spec reached done before `/papur:review` existed. Adopters who want retroactive review run `/papur:review` against the spec to populate the block, after which the spec is subject to the drift check on every subsequent analyze.
 
-Specs not at `status: done` are silently exempt — the `review:` block is populated lazily on first `/gov:review` run, so its absence on `draft` / `clarified` / `planned` / `in-progress` specs is normal.
+Specs not at `status: done` are silently exempt — the `review:` block is populated lazily on first `/papur:review` run, so its absence on `draft` / `clarified` / `planned` / `in-progress` specs is normal.
 
-When `--fix` is set, this check additionally reverts affected specs from `done` to `in-progress` and emits a one-line notice for each (`reverted: specs/{feature}/{file} from done to in-progress — re-run /gov:review`). The revert is never silent; the notice is the point of the action. Re-running `/gov:review` on each reverted spec is left to the operator — auto-running it during `--fix` is out of scope. The grandfather rule applies under `--fix` too: pre-feature `done` specs with no `review:` block are never reverted.
+When `--fix` is set, this check additionally reverts affected specs from `done` to `in-progress` and emits a one-line notice for each (`reverted: specs/{feature}/{file} from done to in-progress — re-run /papur:review`). The revert is never silent; the notice is the point of the action. Re-running `/papur:review` on each reverted spec is left to the operator — auto-running it during `--fix` is out of scope. The grandfather rule applies under `--fix` too: pre-feature `done` specs with no `review:` block are never reverted.
 
 ### Rules (blocking and advisory)
 
-Rules are the cross-cutting tier of the framework's three-tier requirement model (see §rules in `constitution.md`). Load each rule file in the project's rule-file list. The list currently consists of:
+Rules are the cross-cutting tier of the framework's three-tier requirement model (see §rules in `constitution.md`). Discover rule files by directory walk: list every `*.md` file in the project's rule-file directory and classify each by basename suffix per the closed-suffix policy declared in `constitution.md` §rules — `*-backend.md`, `*-frontend.md`, `*-cross.md`, or unrecognized. `/papur:analyze` loads **every** discovered file regardless of detected stack — citation verification spans surfaces, so a backend project that cites `FE-XSS-001` in a scenario covering HTML output still needs that citation verified.
 
-- `specs/security-backend.md`
-- `specs/security-frontend.md`
-- `specs/configuration.md`
+For each file with an unrecognized suffix, emit one stdout line:
 
-Each file is independently optional — only the files that exist in the project are loaded. New rule files are introduced via their own feature spec; when a new rule file ships, the rule-file list above is updated in the same change.
+```text
+rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md
+```
+
+Then emit a single stdout line naming what was selected:
+
+```text
+loading rule files: <comma-separated basenames>
+```
+
+New rule files are introduced via their own feature spec; the suffix governs which stacks see them at `/papur:review` time, but `/papur:analyze` loads them all unconditionally.
 
 For each loaded rule file:
 
@@ -148,6 +160,17 @@ For each loaded rule file:
 - No two rules in the same file share an ID
 
 If any check above fails, the affected rule file is treated as unloadable for the remainder of this analyze pass.
+
+#### Applicable Rules citation consistency (advisory)
+
+The rule-citation audit runs in both directions:
+
+- **Rule fires; not cited (existing).** For every loaded rule whose Verification trigger fires against the target spec, the per-rule semantic assessment (steps 8 and 9) emits a finding when the spec does not address the rule. This direction has been live since 008.
+- **Cited; rule does not fire (new in 016).** For every rule ID listed under the spec's optional `## Applicable Rules` section that did NOT appear in the fired set from the existing direction, emit an advisory finding. The author either removes a decorative citation or extends the spec to bring the cited surface into scope; either resolution keeps the section honest.
+
+The check assumes every citation resolves to a real rule — citations to unknown rule IDs are caught earlier by the rule-integrity check (step 5) and are not reprocessed here. Specs without an `## Applicable Rules` section are silently exempt (no citations to police).
+
+**Severity:** advisory in v1. **Promotion criterion:** promote to blocking when a single `/papur:analyze --all` run reports 5 or more stale citations across the repo, with the threshold met on two consecutive runs (the second-run requirement guards against transient mid-implement states where citations land before the AC that exercises them). Until that threshold is sustained, the check stays advisory so forward-looking citations remain a usable planning signal rather than a friction point.
 
 ### Project-level consistency (advisory)
 
@@ -163,7 +186,7 @@ Read inputs:
 Checks:
 
 - **Generator drift** — run `scripts/gen-readme-table.sh --dry-run` and `scripts/gen-help-tables.sh --dry-run` (when the scripts exist in the project). Non-empty diff means the README Feature Specs table or the help.md command tables are out of sync with their sources. Report each as `Generator out of sync: {script}; the next commit will resolve.`
-- **Anchor resolution** — every §anchor reference in any installed command file (typically in "Reference: §X, §Y" Scope-Boundaries lines) resolves to a corresponding marker in `constitution.md`.
+- **Anchor resolution** — every `§<name>` reference in any installed command file (typically in `Reference: §<first>, §<second>` Scope-Boundaries lines) resolves to a corresponding marker in `constitution.md`.
 - **Command frontmatter completeness** — every `.md` file in the installed commands directory has a `description:` frontmatter field; the same check applies to `.claude/commands/govern.md` when that file exists. Files whose body documents an `$ARGUMENTS` parameter additionally have `argument-hint:`. Report missing fields; do not check value content.
 
 These are advisory, not blocking — they signal framework drift that the project should resolve at its convenience. They do not prevent pipeline advancement on the target feature.
