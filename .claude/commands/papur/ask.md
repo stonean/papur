@@ -33,6 +33,8 @@ Read `.claude/papur-session.json`. If the session includes a `scenario` and `sce
 
 ## Instructions
 
+> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `set-status`). Hosts wrap them with a server-name prefix taken from `.mcp.json` (Claude: `mcp__gvrn__set-status`; Auggie: `mcp:gvrn:set-status`). When the server is registered for your session, **call the corresponding tool** for each primitive referenced below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
+
 ### Confirm target
 
 1. Read `.claude/papur-session.json` to get the session target's feature and optional scenario.
@@ -137,7 +139,7 @@ Informational; no separate confirmation prompt.
 1. Invoke `create-scenario` (MCP: `create-scenario`) to write `specs/{feature}/scenarios/{slug}.md` from the scenario template with the accepted `section`, Context, Behavior, and (optional) Edge Cases. The primitive creates the `scenarios/` subdirectory if absent and refuses on slug conflict. Otherwise, follow the markdown-only path: copy `specs/templates/spec/scenario.md` and substitute the fields by hand.
 2. Invoke `append-task` (MCP: `append-task`) to append a numbered task block to `specs/{feature}/tasks.md` referencing the new scenario. The default body is a single checkbox `- [ ] Implement the behavior described in scenarios/{slug}.md`; the done-when condition is "the scenario's described behavior is correctly implemented and tested." Otherwise, follow the markdown-only path: append the task block by hand, computing the next task number as `max(existing) + 1`.
 3. If the spec's `status` is `done`, invoke `set-status` (MCP: `set-status`) to flip `done → in-progress`. (For other spec statuses, no status mutation occurs.) Otherwise, edit the frontmatter directly.
-4. Update `.claude/papur-session.json` to set the new scenario as the session target (host responsibility — the runtime exposes no session-shaped primitive). Use tempfile + rename atomic-write semantics.
+4. Invoke `write-session` (MCP: `write-session`) to set the new scenario as the session target: pass the feature slug as the feature argument, the repo-relative spec directory as the path argument, the new scenario slug as the scenario argument, and `specs/{feature}/scenarios/{slug}.md` as the scenario-path argument. The primitive rewrites `.claude/papur-session.json` atomically (tempfile + rename). On the markdown-only path, rewrite the JSON directly with top-level fields feature, path, scenario, scenarioPath, setAt (ISO 8601 UTC) in that order through the same tempfile + rename pattern.
 5. Invoke `lint-markdown` (MCP: `lint-markdown`) on every modified file. Otherwise, follow the markdown-only path: run `npx markdownlint-cli2` directly.
 
 ### Status mutation summary

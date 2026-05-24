@@ -74,7 +74,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | Command | Description |
 | --- | --- |
 | `/papur:target` | Set the working feature (and optionally scenario) for this session. |
-| `/papur:status` | Display the pipeline dashboard for all feature specs. |
+| `/papur:status` | Display the pipeline view for all feature specs. |
 | `/papur:help` | Display an overview of the pipeline and its slash commands. |
 
 <!-- generated:commands-orient:end -->
