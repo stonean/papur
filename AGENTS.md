@@ -107,6 +107,8 @@ See [constitution.md](constitution.md) — guiding principles, development pipel
 
 -->
 
+- `scripts/gen-spec-deps.sh` derives spec dependencies from **inline body links** to other specs (`[NNN-slug](../NNN-slug/spec.md)`), not just frontmatter `dependencies`, and the pre-commit hook **rejects cycles** in the derived graph. Keep cross-references that point at a *downstream* spec (e.g. a foundational layer spec referencing a target spec that consumes it) under a `## See also` heading — links there are not treated as hard dependencies — and out of frontmatter `dependencies`. An inline body link in the spec's prose or acceptance criteria becomes a hard edge and can induce a cycle that blocks every commit until moved.
+
 ## Boundaries
 
 - Follow tasks.md literally — do not skip ahead to later pipeline phases. When tasks say to set status to `planned`, stop there. The user advances to the next phase explicitly.
