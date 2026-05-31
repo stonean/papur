@@ -18,17 +18,18 @@ Two back-edges keep the spec lifecycle honest, both owned by `/ask`:
 
 ## Context
 
-Use the session target from `.claude/papur-session.json`. If `$ARGUMENTS` is provided, use it as the initial input text. If no session target is set and no arguments provided, stop and tell the user to run `/papur:target` first.
+Use the session target from `.govern.session.toml`. If `$ARGUMENTS` is provided, use it as the initial input text. If no session target is set and no arguments provided, stop and tell the user to run `/papur:target` first.
 
 ## Target File Detection
 
-Read `.claude/papur-session.json`. If the session includes a `scenario` and `scenarioPath`, the target artifact is the scenario file and the input is always treated as a question (scenarios do not nest under scenarios; the classifier is bypassed). Otherwise, the target artifact is the feature's `spec.md`. If that file does not exist, stop and report: "Spec does not exist. Run `/papur:specify` first."
+Read `.govern.session.toml`. If the session includes a `scenario` and `scenario-path`, the target artifact is the scenario file and the input is always treated as a question (scenarios do not nest under scenarios; the classifier is bypassed). Otherwise, the target artifact is the feature's `spec.md`. If that file does not exist, stop and report: "Spec does not exist. Run `/papur:specify` first."
 
 ## Scope Boundaries
 
 - This command reads the target artifact, appends to its `## Open Questions` section or writes a new `scenarios/{slug}.md` file and appends a linked task to `tasks.md`, and — when a back-edge applies — updates the spec's frontmatter `status` field. No other artifact contents are modified. Plan files and source code are never read or written.
 - Spec `status` is read from the YAML frontmatter at the top of the file. It is mutated by this command only on a back-edge (clarified+ → draft or done → in-progress).
 - For the impact display, this command may read sibling specs' frontmatter (only) under `specs/` to detect dependents. It does not read sibling spec bodies.
+- For the `done`-spec re-open precondition, this command may run `git status --porcelain` scoped to the feature directory to detect uncommitted scenario/task edits. It does not read the diff bodies or run any other git command.
 - Reference: §spec-requirements, §spec-lifecycle, §scenarios, §text-first-artifacts, §bug-handling (constitution loaded by `/papur:target` — do not re-read).
 
 ## Instructions
@@ -37,11 +38,34 @@ Read `.claude/papur-session.json`. If the session includes a `scenario` and `sce
 
 ### Confirm target
 
-1. Read `.claude/papur-session.json` to get the session target's feature and optional scenario.
+1. Read `.govern.session.toml` to get the session target's feature and optional scenario.
 2. Read the target artifact (scenario file if targeted, otherwise `spec.md`).
 3. **Recompute dependencies (safety net).** If the target is a spec, run `scripts/gen-spec-deps.sh --dry-run` against it. If it reports a diff, run it for real to sync `dependencies:` from body inline links. The pre-commit hook normally keeps this in sync; this step catches uncommitted body edits. (Skip on scenario targets — scenarios have no `dependencies` field.)
 4. If the target is a spec, read its frontmatter `status` field now — the value is needed for the gate, the impact display, the classifier's status tiebreaker, and the post-record mutation.
 5. Display the feature name, scenario name (if targeted), status, and a brief summary of what the artifact covers.
+
+### Re-open precondition (spec target, status = done)
+
+When the target is a spec with `status: done`, inspect the feature directory for an on-disk delta before gathering input. The user may have already added scenario or task content informally (during conversation, manual editing, etc.) and only needs the status flipped to match — there is no new input to classify. Detection is a host responsibility; the optional mutation uses the `set-status` primitive when registered. Scenario-targeted `/papur:ask` skips this section (scenarios have no status field).
+
+1. Run `git status --porcelain -- specs/{feature}/scenarios/ specs/{feature}/spec.md specs/{feature}/tasks.md` and parse the output. The delta consists of:
+   - Untracked files under `specs/{feature}/scenarios/` (status `??`).
+   - Modified `specs/{feature}/spec.md` or `specs/{feature}/tasks.md` (any porcelain status code with `M` in either the index column or the working-tree column).
+2. If the delta is empty, skip this section and continue to **Gather the input**.
+3. If the delta is non-empty, display the prior status (`done`) and each delta path with its filesystem mtime, then prompt:
+
+   ```text
+   Spec is `done` but the feature directory has un-tracked scenario or task edits:
+     {path-1}  ({untracked|modified}, mtime {ts})
+     {path-2}  ({untracked|modified}, mtime {ts})
+     ...
+   Revert status to `in-progress` to reflect the on-disk delta?
+   ```
+
+4. On **confirm**, invoke `set-status` (MCP: `set-status`) with `from: done`, `to: in-progress` to flip the frontmatter. Otherwise, edit the frontmatter directly. Display: "Spec reopened to `in-progress`. The on-disk delta is now tracked. Run `/papur:plan` or `/papur:implement` next." Exit without entering the classifier and without recording any new input.
+5. On **decline**, continue to **Gather the input** without modifying any file. The spec remains `done` and the on-disk delta is left alone. If the user has new content to add (the delta is forward-looking and not what they're capturing now), it routes through the existing classifier; if they have nothing more, the Gather step exits naturally. The user can also re-invoke `/papur:ask` later to accept the re-open.
+
+This precondition fires only on `done` specs. The prompt offers an opt-out so the user can decline and continue into the scenario branch with a new input — useful when the delta represents forward-looking work the user does *not* want to reflect in the spec's status yet.
 
 ### Gather the input
 
@@ -139,7 +163,7 @@ Informational; no separate confirmation prompt.
 1. Invoke `create-scenario` (MCP: `create-scenario`) to write `specs/{feature}/scenarios/{slug}.md` from the scenario template with the accepted `section`, Context, Behavior, and (optional) Edge Cases. The primitive creates the `scenarios/` subdirectory if absent and refuses on slug conflict. Otherwise, follow the markdown-only path: copy `specs/templates/spec/scenario.md` and substitute the fields by hand.
 2. Invoke `append-task` (MCP: `append-task`) to append a numbered task block to `specs/{feature}/tasks.md` referencing the new scenario. The default body is a single checkbox `- [ ] Implement the behavior described in scenarios/{slug}.md`; the done-when condition is "the scenario's described behavior is correctly implemented and tested." Otherwise, follow the markdown-only path: append the task block by hand, computing the next task number as `max(existing) + 1`.
 3. If the spec's `status` is `done`, invoke `set-status` (MCP: `set-status`) to flip `done → in-progress`. (For other spec statuses, no status mutation occurs.) Otherwise, edit the frontmatter directly.
-4. Invoke `write-session` (MCP: `write-session`) to set the new scenario as the session target: pass the feature slug as the feature argument, the repo-relative spec directory as the path argument, the new scenario slug as the scenario argument, and `specs/{feature}/scenarios/{slug}.md` as the scenario-path argument. The primitive rewrites `.claude/papur-session.json` atomically (tempfile + rename). On the markdown-only path, rewrite the JSON directly with top-level fields feature, path, scenario, scenarioPath, setAt (ISO 8601 UTC) in that order through the same tempfile + rename pattern.
+4. Invoke `write-session` (MCP: `write-session`) to set the new scenario as the session target: pass the feature slug as the feature argument, the repo-relative spec directory as the path argument, the new scenario slug as the scenario argument, and `specs/{feature}/scenarios/{slug}.md` as the scenario-path argument. The primitive rewrites `.govern.session.toml` atomically (tempfile + rename). On the markdown-only path, rewrite the TOML directly with top-level keys `feature`, `path`, `scenario`, `scenario-path`, `set-at` (ISO 8601 UTC) in that order through the same tempfile + rename pattern.
 5. Invoke `lint-markdown` (MCP: `lint-markdown`) on every modified file. Otherwise, follow the markdown-only path: run `npx markdownlint-cli2` directly.
 
 ### Status mutation summary
@@ -151,6 +175,7 @@ Informational; no separate confirmation prompt.
 | Spec | `done` | question | Status tiebreaker auto-routes to scenario instead. The classifier never selects "question" on a `done` spec. |
 | Spec | `draft` / `clarified` / `planned` / `in-progress` | scenario | Show reopen-not-needed impact (the spec is already accepting work), create scenario, append task, update session target. No status mutation. |
 | Spec | `done` | scenario | Show reopen impact, create scenario, append task, revert `status` to `in-progress` in the same write, update session target. |
+| Spec | `done` (on-disk delta, user confirms re-open precondition) | (precondition) | Flip `status` to `in-progress` via `set-status` (otherwise, edit the frontmatter directly). No question, no scenario, no task — the existing on-disk edits already capture the work. |
 | Scenario | (no status field) | (forced question) | Append question to the scenario's Open Questions section. The parent spec's status is not read or mutated. |
 
 ### Prompt for another

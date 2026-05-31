@@ -23,7 +23,7 @@ The same `govern.md` supports every agent the framework knows about. The set of 
 
 **Procedural fidelity.** Execute the steps below as written. The only confirmation prompts to issue are those the procedure specifies: project inputs (§Inputs), agent-selection prompts on `--add-agent` / first-run (§Agent Selection), the registry-driven migration prompts (§Pre-run Migrations — outer "apply N pending migrations" prompt plus any per-entry inner prompts the procedure files specify), and per-category workflow prompts (§Workflow recommendation, step 8). Do not stop to warn about uncommitted edits to update-strategy files, custom slash commands that **Slash command cleanup** is about to remove, or "data loss" from the stale → write-and-abort path. The procedure already encodes safety: `.govern.toml` `[pinned] files` is the opt-out, the stale path writes upstream and aborts cleanly (recoverable from git), and slash-command cleanup is unconditional for unpinned files. Extra prompts duplicate information the procedure already gives the user and stall routine runs.
 
-1. The walker context carries the inputs the host has already gathered and validated: project (the destination project name), description (one-line project description), languages (comma-separated), agents (registry keys), framework-version (release tag), archive-url and sha256-url (computed from framework-version), staging-dir, substitutions-map, manifest-entries (the per-strategy list described in **Shared Files** and **Per-Agent Scaffolding**), pinned-list (from `.govern.toml`'s `[pinned] files` block), gitignore-block (the `.claude/`, `specs/.cache/`, etc. lines), enforce-directories (the slash-command directories whose top-level `*.md` files are pruned to the manifest), and the per-agent govern-install entry with `keep-literals: ["project", "cli-config-dir"]`. The host runs the markdown-only reference below to collect inputs, derive registry values, validate `.govern.toml`, and seed context; the runtime walks the procedure that follows.
+1. The walker context carries the inputs the host has already gathered and validated: project (the destination project name), description (one-line project description), languages (comma-separated), agents (registry keys), framework-version (release tag), archive-url and sha256-url (computed from framework-version), staging-dir, substitutions-map, manifest-entries (the per-strategy list described in **Shared Files** and **Per-Agent Scaffolding**), pinned-list (from `.govern.toml`'s `[pinned] files` block), gitignore-block (the `.claude/`, `specs/.cache/`, etc. lines), host-block (the cli-config-dir and project values the runtime reads at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`), enforce-directories (the slash-command directories whose top-level `*.md` files are pruned to the manifest), and the per-agent govern-install entry with `keep-literals: ["project", "cli-config-dir"]`. The host runs the markdown-only reference below to collect inputs, derive registry values, validate `.govern.toml`, and seed context; the runtime walks the procedure that follows.
 
 2. Invoke `fetch-archive` (MCP: `fetch-archive`) to download the framework tarball. The primitive verifies the sha256 against a sidecar URL when one is supplied; without a sidecar (the live-on-main case, since GitHub's auto-generated source tarballs ship without sidecars) it returns the computed digest and `verified: false`, leaving any out-of-band verification to the host. A sidecar mismatch halts the procedure with an `error` envelope so no partial state lands in the destination tree.
 
@@ -33,11 +33,13 @@ The same `govern.md` supports every agent the framework knows about. The set of 
 
 5. Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.gitignore` with `marker-style: "line-prefix"` and `marker: "govern"` to install or update the framework-managed block (the `.claude/`, `specs/.cache/`, etc. lines). First-run creates the file; subsequent runs update only the region between the `# govern` preamble line and the next blank line, preserving the rest of the file byte-for-byte. Replaces the inline `grep` check the markdown-only reference describes for the `.gitignore` merge step.
 
-6. Invoke `enforce-manifest` (MCP: `enforce-manifest`) once per directory in the host's enforce-directories list (typically the per-agent slash-command directory). The primitive removes files matching the glob-include arg (default `*.md`) whose relative path is neither in the expected list nor pinned. One call replaces the slash-command manifest enforcement loop the markdown-only reference describes. Adopter cleanup of historical conventions (legacy `skills/` directory, post-005 workflow filename rename, and the rest) is owned by the **Pre-run Migrations** section above and the `framework/migrations.toml` registry it drives.
+6. Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.govern.toml` with `marker-style: "line-prefix"`, `marker: "govern (host)"`, and a block carrying the resolved cli-config-dir and project values (the host-block from step 1). First-run creates the file with just the managed block; subsequent runs update only the region between the `# govern (host)` preamble line and the next blank line, preserving every other `.govern.toml` section (`[pinned]`, `[workflows]`, `[migrations]`, `[review]`) byte-for-byte. The runtime reads these values at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; without the block the runtime falls back to `.claude` / repo directory basename — fine for the framework's own repo, broken for any adopter whose layout doesn't match the defaults. See §Project Configuration for the `[host]` schema.
 
-7. Invoke `apply-manifest` (MCP: `apply-manifest`) a second time with a single entry for the per-agent `govern` self-install (the `{cli-config-dir}/commands/govern.md` path) and an **empty substitutions map** (`{}`). `govern.md`'s body contains prose references to every placeholder name the bulk step substitutes — `{project}`, `{cli-config-dir}`, `{project-name}`, `{One-line project description.}` — describing what those placeholders mean in *other* files. None of them are values to substitute in `govern.md` itself, so the self-install call passes no substitutions rather than relying on `keep-literals` to mask individual keys from the full map. The split from step 4 isolates the no-substitute concern from the bulk substitute step.
+7. Invoke `enforce-manifest` (MCP: `enforce-manifest`) once per directory in the host's enforce-directories list (typically the per-agent slash-command directory). The primitive removes files matching the glob-include arg (default `*.md`) whose relative path is neither in the expected list nor pinned. One call replaces the slash-command manifest enforcement loop the markdown-only reference describes. Adopter cleanup of historical conventions (legacy `skills/` directory, post-005 workflow filename rename, and the rest) is owned by the **Pre-run Migrations** section above and the `framework/migrations.toml` registry it drives.
 
-8. Render the completion message (host responsibility): list the agents configured, the next pipeline command (`/{project}:specify`), the optional runtime install pointer (see the README's Runtime section), and any per-agent post-install reminders from the registry rows above.
+8. Invoke `apply-manifest` (MCP: `apply-manifest`) a second time with a single entry for the per-agent `govern` self-install (the `{cli-config-dir}/commands/govern.md` path) and an **empty substitutions map** (`{}`). `govern.md`'s body contains prose references to every placeholder name the bulk step substitutes — `{project}`, `{cli-config-dir}`, `{project-name}`, `{One-line project description.}` — describing what those placeholders mean in *other* files. None of them are values to substitute in `govern.md` itself, so the self-install call passes no substitutions rather than relying on `keep-literals` to mask individual keys from the full map. The split from step 4 isolates the no-substitute concern from the bulk substitute step.
+
+9. Render the completion message (host responsibility): list the agents configured, the next pipeline command (`/{project}:specify`), the optional runtime install pointer (see the README's Runtime section), and any per-agent post-install reminders from the registry rows above.
 
 ## Agent Registry
 
@@ -55,9 +57,10 @@ For each agent, these paths are computed by convention from the row above. They 
 | Derived value | Formula |
 | --- | --- |
 | Configure source path | `framework/bootstrap/configure/{key}.md` |
-| Session JSON path | `{config_dir}/{project}-session.json` |
 | Project commands directory | `{config_dir}/commands/{project}/` |
 | `govern` install path | `{config_dir}/commands/govern.md` |
+
+The session state file is `.govern.session.toml` at the repo root for every adopter — not a derived per-agent value. It's gitignored and host-agnostic.
 
 ### Adding a new agent
 
@@ -233,6 +236,11 @@ If `framework/migrations.toml` contains two entries with the same `id`, or if an
 The file is a flat collection of top-level sections. There is no umbrella namespace; each section is keyed to the thing it governs. The sections that may appear in `.govern.toml`:
 
 ```toml
+# govern (host)
+[host]
+cli-config-dir = ".claude"
+project = "gov"
+
 [pinned]
 # Files listed here use 'skip' instead of 'update'.
 # Use destination paths (after placeholder resolution).
@@ -270,6 +278,8 @@ declined_categories = ["Linting", "Formatting"]
 # file = "api-backend.md"
 # reason = "Pre-OpenAPI; revisit after schema lands (PROJ-1234)"
 ```
+
+`host.cli-config-dir` and `host.project` — the host's per-user config-dir name and the project's slash-command namespace, written by `/govern` into a managed block (`# govern (host)` line-prefix marker) on every run. The runtime reads these at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; both keys fall back to `.claude` / the repo directory basename when the block is missing. Adopters whose layout matches the defaults (this repo, anyone on Claude Code with the conventional `.claude/commands/<project>/`) never observe the difference; Auggie adopters and anyone with a non-standard layout do. The block is idempotent — re-runs update the values rather than appending duplicates.
 
 `pinned.files` — any file listed that would normally use `update` strategy is treated as `skip` instead. Report pinned files in the post-scaffolding summary.
 
@@ -428,6 +438,7 @@ These files are scaffolded **once per `/govern` invocation**, regardless of how 
 | `framework/rules/security-backend.md` | `specs/rules/security-backend.md` |
 | `framework/rules/security-frontend.md` | `specs/rules/security-frontend.md` |
 | `framework/bootstrap/hooks/govern-pre-commit` | `.githooks/govern-pre-commit` |
+| `scripts/gen-spec-deps.sh` | `scripts/gen-spec-deps.sh` |
 | `.markdownlint-cli2.jsonc` | `.markdownlint-cli2.jsonc` |
 | `framework/templates/spec/spec.md` | `specs/templates/spec.md` |
 | `framework/templates/spec/plan.md` | `specs/templates/plan.md` |
@@ -445,7 +456,6 @@ These files are scaffolded **once per `/govern` invocation**, regardless of how 
 | `framework/templates/project/errors.md` | `specs/errors.md` |
 | `framework/templates/project/events.md` | `specs/events.md` |
 | `framework/templates/project/inbox.md` | `specs/inbox.md` |
-| `scripts/gen-spec-deps.sh` | `scripts/gen-spec-deps.sh` |
 | `framework/bootstrap/hooks/pre-commit` | `.githooks/pre-commit` |
 
 ### Shared files with conflict handling
@@ -634,9 +644,9 @@ After the slash command cleanup, offer any newly registered workflows that match
 
 11. **Discovery note for Auggie.** Auggie's official docs document subdirectory namespacing for one level (`.augment/commands/foo/bar.md` → `/foo:bar`). Multi-level paths like `.augment/commands/{project}/workflows/lint.md` should resolve to `/{project}:workflows:lint` by the same colon-namespace convention, but a user adopting Auggie may want to confirm autocomplete the first time. Claude Code's two-level path is documented and works as expected.
 
-### Session state (strategy: create)
+### Session state
 
-Create `{config_dir}/{project}-session.json` with empty content `{}` only if it does not already exist.
+The session state file lives at `.govern.session.toml` at the repo root — host-agnostic, project-name-agnostic, gitignored. The bootstrap does not create it; it's written on the first `/{project}:target` (or its scenario sibling) invocation by the runtime's `write-session` primitive (or, on the markdown-only path, by the host's file-writing tool). Each adopted agent reads from the same file; there is no per-agent session state.
 
 ### `govern` self-installation (strategy: update)
 
@@ -666,7 +676,7 @@ Detection runs in this order — first match wins:
 
 The detection ladder no longer treats `.githooks/pre-commit` itself as a govern-managed file — under the new model the outer file is adopter-owned, so its presence is not a signal that govern installed it. Migration of pre-existing govern-installed hooks (from spec-017 adopters) is handled by the **Migration from spec-017 hook** subsection below, which runs before the detection ladder.
 
-`scripts/gen-spec-deps.sh` ships in the **Shared Files** manifest with `create` strategy. First run installs it; subsequent runs leave it alone (so adopters can edit the script without `/govern` clobbering).
+`scripts/gen-spec-deps.sh` ships in the **Shared Files** manifest with `update` strategy. Every `/govern` run refreshes it from upstream so adopters pick up generator fixes automatically. Adopters who have customized the script can list it in `.govern.toml` `pinned.files` to opt out of overwrites.
 
 ### Migration from spec-017 hook
 

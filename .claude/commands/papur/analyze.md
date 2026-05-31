@@ -26,7 +26,7 @@ Parse `$ARGUMENTS` for flags and an optional feature identifier:
 - **Feature identifier** — a feature number, partial name, or full directory name. Overrides the session target.
 - **`--all`** — scan all feature directories under `specs/` instead of a single target. Report results grouped by feature.
 
-If `--all` is not present, use the feature identifier if provided, otherwise fall back to the session target from `.claude/papur-session.json`. If no target can be resolved, stop and tell the user to run `/papur:target` first or use `--all`.
+If `--all` is not present, use the feature identifier if provided, otherwise fall back to the session target from `.govern.session.toml`. If no target can be resolved, stop and tell the user to run `/papur:target` first or use `--all`.
 
 ## Scope Boundaries
 
@@ -79,7 +79,7 @@ For each scenario file (`scenarios/{slug}.md`):
 
 - A YAML frontmatter block exists at the top of the file.
 - The frontmatter parses as valid YAML.
-- Either the `section` field (new schema) or the legacy `spec-ref` field is present and non-empty. New scenarios written by `/papur:ask` use `section`. Pre-017 scenarios keep `spec-ref` per the frozen-archaeology rule; either field satisfies the check.
+- Either the `section` field (new schema) or the legacy `spec-ref` field is present and non-empty. New scenarios written by `/papur:ask` use `section`; pre-017 scenarios written before `section` existed may still carry `spec-ref`. Either field satisfies the check.
 
 Reference: the schema is canonically declared in `framework/constitution.md` §text-first-artifacts.
 

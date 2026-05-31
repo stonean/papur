@@ -24,8 +24,8 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `Write`
 
    **Govern state files (no per-write confirmation):**
-   - `Edit(.claude/papur-session.json)`
-   - `Write(.claude/papur-session.json)`
+   - `Edit(.govern.session.toml)`
+   - `Write(.govern.session.toml)`
 
    **Web access:**
    - `WebFetch`
@@ -101,6 +101,7 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `mcp__gvrn__enforce-manifest`
    - `mcp__gvrn__merge-managed-block`
    - `mcp__gvrn__merge-permissions`
+   - `mcp__gvrn__migrate-session-file`
    - `mcp__gvrn__create-scenario`
    - `mcp__gvrn__append-task`
    - `mcp__gvrn__dashboard`

@@ -1,2 +1,7 @@
 [migrations]
-last_applied = "rule-files-relocate"
+last_applied = "session-file-consolidate"
+
+# govern (host)
+[host]
+cli-config-dir = ".claude"
+project = "papur"

@@ -1,6 +1,6 @@
 ---
 status: draft
-dependencies: [001-file-format, 011-target-pdf]
+dependencies: [001-file-format]
 review:
   last-run: null
   reviewed-against: null
@@ -49,8 +49,12 @@ The qualified form is rare; most raw HTML belongs to the web target only. Even o
 - [ ] A `::: html` block emits its contents verbatim on the web target.
 - [ ] A `::: html` block is omitted from pdf, email, and plain targets by default.
 - [ ] Inline raw HTML in a paragraph (e.g. `Press <kbd>Esc</kbd>`) is preserved on the web target.
-- [ ] A target-qualified `::: @pdf html` block is acknowledged by the pdf target (emission rules for raw HTML in the pdf target are owned by [011-target-pdf](../011-target-pdf/spec.md)).
+- [ ] A target-qualified `::: @pdf html` block is acknowledged by the pdf target (emission rules for raw HTML in the pdf target are owned by the pdf target spec — see below).
 - [ ] Raw HTML inside a `::: html` block is not re-parsed as papur content — papur-style attribute syntax inside the block is not interpreted.
+
+## See also
+
+- [011-target-pdf](../011-target-pdf/spec.md) — owns the emission rules for target-qualified `::: @pdf html` blocks.
 
 ## Open Questions
 

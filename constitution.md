@@ -321,14 +321,30 @@ Bugs route to the tier that matches the *scope* of the missing or violated requi
 
 ### Brownfield Inbox
 
-For projects adopting `govern` incrementally, a `specs/inbox.md` file serves as a temporary inbox for known issues not yet assigned to a feature spec. Items are recorded with `/log` and groomed into their proper home with `/groom`.
+A `specs/inbox.md` file is the project's capture queue for issues not yet assigned to a feature spec. It serves two roles:
+
+- **Brownfield migration** — for projects adopting `govern` incrementally, known issues are parked here until a spec exists to absorb them.
+- **Incidental capture** — issues an agent discovers as a side effect of other work are recorded here automatically (see [Automatic issue capture](#automatic-issue-capture) below).
+
+Items are recorded with `/log` (manual) or captured automatically during work, and groomed into their proper home with `/groom`.
 
 Inbox rules:
 
 - Do not frontfill bugs that are not being actively worked on
 - Write specs for areas being actively touched — let adoption spread naturally
 - As specs are written, `/groom` migrates items from the inbox into their proper home
-- The goal is for `inbox.md` to eventually be empty and deleted
+- The brownfield-migration backlog drains toward empty as adoption completes; the incidental-capture role is ongoing, so the file persists as long as new work keeps surfacing new issues
+
+#### Automatic issue capture
+
+While working a task, an agent surfaces issues that fall outside the current task's scope — a security weakness, a resource or memory leak, a violated convention, a latent bug in adjacent code. These MUST be captured, not dropped:
+
+- **Capture automatically, without prompting.** When an agent identifies such an issue during any task work, it appends the issue to `specs/inbox.md` itself — the same mechanical append `/log` performs — without pausing to ask the user. Capture is not a pipeline gate; it never interrupts the task in flight.
+- **Record, do not derail.** The agent does not stop the current task to fix an out-of-scope issue. It records the finding and continues. An issue *inside* the current task's scope is fixed as part of the task, not logged.
+- **Severity raises salience, not the routing.** Security issues and memory or resource leaks are the cases most costly to lose, so they are captured first and flagged; convention violations and lesser findings are captured the same way. Everything routes through `/groom` later — capture itself is uninterpreted.
+- **Surface at completion.** Issues captured during a unit of work are presented back to the user when that work completes — as part of the `/papur:implement` completion summary and the `/papur:review` report. The surfacing step is the backstop that keeps capture from being silent: per the **Design Principles** rule, the framework does not rely on the agent *remembering* a mid-task finding, it makes every capture visible at the next gate.
+
+This keeps the agent's attention on the task while guaranteeing that incidental discoveries reach the inbox and, through `/groom`, the right artifact tier ([Bug Decision Tree](#bug-decision-tree)).
 
 <!-- §brownfield-process -->
 
@@ -503,7 +519,7 @@ Two commands that copy-paste the same manifest into their own bodies are guarant
 
 ### Concurrent Features
 
-The session state file (`.claude/papur-session.json`) holds a single target by design. The pipeline is serial within a feature, and concurrent work on independent features uses two independent sessions in two terminals — not multi-target session state. Isolation is provided by the platform layer: `git worktree` keeps the working trees separate, and AI-agent platforms typically expose isolation primitives (Claude Code's `isolation: "worktree"` agent parameter, Cursor's worktree integration, etc.). Reach for those rather than asking `govern` to track multiple targets at once.
+The session state file (`.govern.session.toml` at the repo root) holds a single target by design. The pipeline is serial within a feature, and concurrent work on independent features uses two independent sessions in two terminals — not multi-target session state. Isolation is provided by the platform layer: `git worktree` keeps the working trees separate, and AI-agent platforms typically expose isolation primitives (Claude Code's `isolation: "worktree"` agent parameter, Cursor's worktree integration, etc.). Reach for those rather than asking `govern` to track multiple targets at once.
 
 <!-- §cross-spec-impact -->
 

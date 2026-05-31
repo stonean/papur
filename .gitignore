@@ -15,6 +15,9 @@
 *.sqlite
 *.sqlite-journal
 
+# govern session state — per-user, ephemeral; managed by /{project}:target.
+.govern.session.toml
+
 # IDE
 .vscode/
 .idea/
