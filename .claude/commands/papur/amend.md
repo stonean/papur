@@ -3,15 +3,15 @@ description: Add a question or a scenario to the targeted spec (classifier-drive
 argument-hint: "[input text]"
 ---
 
-# Ask
+# Amend
 
-Add input to the targeted spec or scenario. `/ask` classifies the input as either a **question** (an unresolved decision recorded under `## Open Questions`) or a **scenario** (a concrete behavior captured under `scenarios/{slug}.md`), routes through the matching path, and on the spec target performs whichever back-edge keeps the lifecycle invariant.
+Add input to the targeted spec or scenario. `/amend` classifies the input as either a **question** (an unresolved decision recorded under `## Open Questions`) or a **scenario** (a concrete behavior captured under `scenarios/{slug}.md`), routes through the matching path, and on the spec target performs whichever back-edge keeps the lifecycle invariant.
 
 ## Purpose
 
-Captures additions to a spec that arise at any point in the pipeline — during review, planning, implementation, or just thinking. `/ask` is the single verb for "I have a thing to add to this spec." The framework classifies the input and routes it; the user approves the classification (or flips it) at the same approval gate that already exists for the refined wording.
+Captures additions to a spec that arise at any point in the pipeline — during review, planning, implementation, or just thinking. `/amend` is the single verb for "I have a thing to add to this spec." The framework classifies the input and routes it; the user approves the classification (or flips it) at the same approval gate that already exists for the refined wording.
 
-Two back-edges keep the spec lifecycle honest, both owned by `/ask`:
+Two back-edges keep the spec lifecycle honest, both owned by `/amend`:
 
 - **Question route — `clarified` / `planned` / `in-progress` → `draft`.** Recording a new open question on a non-`draft` spec leaves the spec in an internally inconsistent state ("status says questions resolved, body has unresolved questions"); the same write reverts status to `draft`. The user's acceptance of the refined question at the approval gate is the consent for the mutation; no separate prompt fires.
 - **Scenario route — `done` → `in-progress`.** Recording a scenario on a `done` spec reopens it via the documented reopen cycle (§spec-lifecycle). The scenario's task is implemented, the spec returns to `done`.
@@ -34,7 +34,7 @@ Read `.govern.session.toml`. If the session includes a `scenario` and `scenario-
 
 ## Instructions
 
-> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `set-status`). Hosts wrap them with a server-name prefix taken from `.mcp.json` (Claude: `mcp__gvrn__set-status`; Auggie: `mcp:gvrn:set-status`). When the server is registered for your session, **call the corresponding tool** for each primitive referenced below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
+> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `set-status`). Hosts wrap them with a server-name prefix taken from the agent's MCP registration (Claude: `mcp__gvrn__set-status`; Auggie: `mcp:gvrn:set-status`). When the server is registered for your session, **call the corresponding tool** for each primitive referenced below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
 
 ### Confirm target
 
@@ -46,7 +46,7 @@ Read `.govern.session.toml`. If the session includes a `scenario` and `scenario-
 
 ### Re-open precondition (spec target, status = done)
 
-When the target is a spec with `status: done`, inspect the feature directory for an on-disk delta before gathering input. The user may have already added scenario or task content informally (during conversation, manual editing, etc.) and only needs the status flipped to match — there is no new input to classify. Detection is a host responsibility; the optional mutation uses the `set-status` primitive when registered. Scenario-targeted `/papur:ask` skips this section (scenarios have no status field).
+When the target is a spec with `status: done`, inspect the feature directory for an on-disk delta before gathering input. The user may have already added scenario or task content informally (during conversation, manual editing, etc.) and only needs the status flipped to match — there is no new input to classify. Detection is a host responsibility; the optional mutation uses the `set-status` primitive when registered. Scenario-targeted `/papur:amend` skips this section (scenarios have no status field).
 
 1. Run `git status --porcelain -- specs/{feature}/scenarios/ specs/{feature}/spec.md specs/{feature}/tasks.md` and parse the output. The delta consists of:
    - Untracked files under `specs/{feature}/scenarios/` (status `??`).
@@ -63,7 +63,7 @@ When the target is a spec with `status: done`, inspect the feature directory for
    ```
 
 4. On **confirm**, invoke `set-status` (MCP: `set-status`) with `from: done`, `to: in-progress` to flip the frontmatter. Otherwise, edit the frontmatter directly. Display: "Spec reopened to `in-progress`. The on-disk delta is now tracked. Run `/papur:plan` or `/papur:implement` next." Exit without entering the classifier and without recording any new input.
-5. On **decline**, continue to **Gather the input** without modifying any file. The spec remains `done` and the on-disk delta is left alone. If the user has new content to add (the delta is forward-looking and not what they're capturing now), it routes through the existing classifier; if they have nothing more, the Gather step exits naturally. The user can also re-invoke `/papur:ask` later to accept the re-open.
+5. On **decline**, continue to **Gather the input** without modifying any file. The spec remains `done` and the on-disk delta is left alone. If the user has new content to add (the delta is forward-looking and not what they're capturing now), it routes through the existing classifier; if they have nothing more, the Gather step exits naturally. The user can also re-invoke `/papur:amend` later to accept the re-open.
 
 This precondition fires only on `done` specs. The prompt offers an opt-out so the user can decline and continue into the scenario branch with a new input — useful when the delta represents forward-looking work the user does *not* want to reflect in the spec's status yet.
 
@@ -104,8 +104,9 @@ The goal is a question that is precise, actionable, and self-contained — someo
 The goal is a scenario that captures a specific situation and the concrete behavior it triggers. Scenarios live at a lower level of abstraction than the parent spec — narrower scope, plain language.
 
 1. **Walk the bug decision tree** (§bug-handling):
-   - **Does a spec exist for the behavior?** If no, stop. Tell the user to create the spec first via `/papur:specify`, then come back. (`/ask` requires a session target with a real spec file.)
+   - **Does a spec exist for the behavior?** If no, stop. Tell the user to create the spec first via `/papur:specify`, then come back. (`/amend` requires a session target with a real spec file.)
    - **Is the spec ambiguous or incomplete?** If yes — the right fix is to update the spec directly, not record a scenario. Offer to help edit the spec; exit without recording.
+   - **Is this a chore rather than a spec addition?** If the input is project maintenance (lint or formatting cleanup, dependency cleanup, repo hygiene, a standalone refactor) that adds no durable requirement and is not really about this spec (§bug-handling, durability test) — it is not spec material. Do not write a scenario or touch the spec; tell the user to capture it with `/papur:log` (it lives in the inbox as a chore, done directly). Exit without recording.
    - **Is the spec clear but the behavior needs lower-level elaboration?** Proceed to draft the scenario.
 2. **Derive a slug** — lowercase, hyphenated, no whitespace, no punctuation beyond hyphens. Check `specs/{feature}/scenarios/` for slug conflicts; if a file with that slug exists, ask the user for a different name.
 3. **Identify the parent-spec section** — the `section:` frontmatter value names the spec section the scenario elaborates. Read the spec's body to pick an appropriate section, or ask the user.
@@ -163,7 +164,7 @@ Informational; no separate confirmation prompt.
 1. Invoke `create-scenario` (MCP: `create-scenario`) to write `specs/{feature}/scenarios/{slug}.md` from the scenario template with the accepted `section`, Context, Behavior, and (optional) Edge Cases. The primitive creates the `scenarios/` subdirectory if absent and refuses on slug conflict. Otherwise, follow the markdown-only path: copy `specs/templates/spec/scenario.md` and substitute the fields by hand.
 2. Invoke `append-task` (MCP: `append-task`) to append a numbered task block to `specs/{feature}/tasks.md` referencing the new scenario. The default body is a single checkbox `- [ ] Implement the behavior described in scenarios/{slug}.md`; the done-when condition is "the scenario's described behavior is correctly implemented and tested." Otherwise, follow the markdown-only path: append the task block by hand, computing the next task number as `max(existing) + 1`.
 3. If the spec's `status` is `done`, invoke `set-status` (MCP: `set-status`) to flip `done → in-progress`. (For other spec statuses, no status mutation occurs.) Otherwise, edit the frontmatter directly.
-4. Invoke `write-session` (MCP: `write-session`) to set the new scenario as the session target: pass the feature slug as the feature argument, the repo-relative spec directory as the path argument, the new scenario slug as the scenario argument, and `specs/{feature}/scenarios/{slug}.md` as the scenario-path argument. The primitive rewrites `.govern.session.toml` atomically (tempfile + rename). On the markdown-only path, rewrite the TOML directly with top-level keys `feature`, `path`, `scenario`, `scenario-path`, `set-at` (ISO 8601 UTC) in that order through the same tempfile + rename pattern.
+4. Invoke `write-session` (MCP: `write-session`) to set the new scenario as the session target: pass the feature slug as the feature argument, the repo-relative spec directory as the path argument, the new scenario slug as the scenario argument, and `specs/{feature}/scenarios/{slug}.md` as the scenario-path argument. The primitive performs a target write: it rewrites `.govern.session.toml` atomically (tempfile + rename), preserving any cli-config-dir already in the file (the per-contributor agent identity written by /govern). On the markdown-only path, first read any existing `.govern.session.toml` to capture its cli-config-dir, then rewrite the TOML directly with top-level keys `feature`, `path`, `scenario`, `scenario-path`, `set-at` (ISO 8601 UTC), then the preserved cli-config-dir, through the same tempfile + rename pattern.
 5. Invoke `lint-markdown` (MCP: `lint-markdown`) on every modified file. Otherwise, follow the markdown-only path: run `npx markdownlint-cli2` directly.
 
 ### Status mutation summary
@@ -175,6 +176,7 @@ Informational; no separate confirmation prompt.
 | Spec | `done` | question | Status tiebreaker auto-routes to scenario instead. The classifier never selects "question" on a `done` spec. |
 | Spec | `draft` / `clarified` / `planned` / `in-progress` | scenario | Show reopen-not-needed impact (the spec is already accepting work), create scenario, append task, update session target. No status mutation. |
 | Spec | `done` | scenario | Show reopen impact, create scenario, append task, revert `status` to `in-progress` in the same write, update session target. |
+| Spec | any | chore (scenario-route guard) | Not spec material — redirect the user to `/papur:log` and exit. No question, scenario, task, or status mutation. |
 | Spec | `done` (on-disk delta, user confirms re-open precondition) | (precondition) | Flip `status` to `in-progress` via `set-status` (otherwise, edit the frontmatter directly). No question, no scenario, no task — the existing on-disk edits already capture the work. |
 | Scenario | (no status field) | (forced question) | Append question to the scenario's Open Questions section. The parent spec's status is not read or mutated. |
 
@@ -187,4 +189,5 @@ When the user is done, display the next step:
 - If a question was recorded on a spec: "Question recorded. Run `/papur:clarify` to resolve it." On a spec, the status is now `draft` regardless of where it started.
 - If a question was recorded on a scenario: "Question recorded. Run `/papur:clarify` to resolve it." The parent spec's status is unchanged.
 - If a scenario was recorded: "Scenario recorded at `specs/{feature}/scenarios/{slug}.md` and set as the session target. Run `/papur:implement` to work on the new task."
+- If the input was a chore: "That's general maintenance, not a spec addition — capture it with `/papur:log`." Nothing was recorded on the spec.
 - If the user aborted before accepting any input, exit silently — no input was recorded and no status mutation occurred.

@@ -31,12 +31,13 @@ If `--all` is not present, use the feature identifier if provided, otherwise fal
 ## Scope Boundaries
 
 - This is a read-only command. Do NOT modify any files.
-- Read only files within the target feature's directory, the cross-spec files needed for reference checks (`specs/system.md`, `specs/events.md`, `specs/errors.md`, dependency spec files), and the project's installed command-source frontmatter for the project-level consistency section below (`.claude/commands/papur/*.md` frontmatter only, plus `.claude/commands/govern.md` frontmatter for the bootstrap installer **if that file exists**). May invoke `scripts/gen-readme-table.sh --dry-run`, `scripts/gen-help-tables.sh --dry-run`, and `scripts/gen-spec-deps.sh --dry-run` to surface generator drift. Do NOT read source code or test files.
-- Reference: §spec-requirements, §plan-phase, §tasks-phase, §readiness-check, §scenarios, §cross-spec-impact, §text-first-artifacts, §markdown-standards, §drift-prevention (constitution loaded by `/papur:target` — do not re-read).
+- Read only files within the target feature's directory, the cross-spec files needed for reference checks (`specs/system.md`, `specs/events.md`, `specs/errors.md`, dependency spec files), and the project's installed command-source frontmatter for the project-level consistency section below (`.claude/commands/papur/*.md` frontmatter only, plus `.claude/commands/govern.md` frontmatter for the bootstrap installer **if that file exists**). May invoke `scripts/gen-help-tables.sh --dry-run` and `scripts/gen-spec-deps.sh --dry-run` to surface generator drift. Do NOT read source code or test files.
+- Resolving the target spec's cross-service `references:` index additionally reads `.govern.toml` (the `[services]` registry) and the registered local checkouts' linked `spec.md` files — and nothing else; the canonical repo URL is **never fetched**. On the runtime path the host calls the resolve-references primitive per referencing spec; on the markdown-only path it reads those files with host file tools (see **Cross-service references** in the markdown-only reference below). This stays read-only.
+- Reference: §spec-requirements, §plan-phase, §tasks-phase, §readiness-check, §scenarios, §cross-spec-impact, §text-first-artifacts, §markdown-standards, §drift-prevention (constitution loaded by `/papur:target` — do not re-read). See [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md) for the reference semantics surfaced here.
 
 ## Instructions
 
-> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `read-spec`). Hosts wrap them with a server-name prefix taken from `.mcp.json` (Claude: `mcp__gvrn__read-spec`; Auggie: `mcp:gvrn:read-spec`). When the server is registered for your session, **call the corresponding tool** for each step listed below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
+> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `read-spec`). Hosts wrap them with a server-name prefix taken from the agent's MCP registration (Claude: `mcp__gvrn__read-spec`; Auggie: `mcp:gvrn:read-spec`). When the server is registered for your session, **call the corresponding tool** for each step listed below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
 
 1. Invoke `read-spec` (MCP: `read-spec`) against the targeted feature to load frontmatter, sections, and the open-question count from the body. The result drives subsequent steps' tier classification (status governs which artifact-completeness checks apply).
 
@@ -57,10 +58,13 @@ If `--all` is not present, use the feature identifier if provided, otherwise fal
 9. <!-- llm:assessSpecQuality --> For every loaded SHOULD-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. SHOULD-tier findings join the Advisory tier in the rendered report. Otherwise, fall back to the markdown-only path.
 
 <!-- audit:ignore-promotion -->
-10. Parse the spec body for a `## Applicable Rules` section and collect every rule ID cited there. For each cited ID that did **not** appear in the set of rules whose Verification triggers fired in steps 8 or 9, emit an advisory finding: `Applicable Rules citation does not fire: {rule-id} is listed under ## Applicable Rules, but the rule's Verification trigger did not fire against any spec artifact. Either remove the citation, or extend the spec to bring the cited surface into scope.` Skip this step when the spec has no `## Applicable Rules` section. Citations whose IDs do not resolve to any loaded rule are handled earlier in step 5 and not reprocessed here. See **Applicable Rules citation consistency** in the markdown-only reference for the full semantics and the promotion criterion that governs when this check graduates from advisory to blocking.
+10. Resolve the target spec's cross-service **references** (deterministic; advisory). When the spec's derived `references:` index is non-empty, resolve each entry by the procedure in the **Cross-service references** section of the markdown-only reference below — the resolve-references primitive on the runtime path; host file tools (read `.govern.toml` and the linked checkout) on the markdown-only path. A **broken** outcome — the service is registered and its checkout reachable, but the target spec does not resolve (renamed, moved, deleted, or mistyped upstream, or a malformed URL) — is an **Advisory** finding, the cross-repo analog of a broken sibling link. The informational unknowns are **not** findings: **unregistered** (the repo matches no `[services]` entry — surface a pointer to `/papur:link` to register the service), **not checked out**, and **status unreadable** each record what could not be proven, without flagging a defect. Skip this step when the target spec declares no references.
 
 <!-- audit:ignore-promotion -->
-11. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec whose review block has drifted to blocking — see the Review state drift section in the markdown-only reference below.
+11. Parse the spec body for a `## Applicable Rules` section and collect every rule ID cited there. For each cited ID that did **not** appear in the set of rules whose Verification triggers fired in steps 8 or 9, emit an advisory finding: `Applicable Rules citation does not fire: {rule-id} is listed under ## Applicable Rules, but the rule's Verification trigger did not fire against any spec artifact. Either remove the citation, or extend the spec to bring the cited surface into scope.` Skip this step when the spec has no `## Applicable Rules` section. Citations whose IDs do not resolve to any loaded rule are handled earlier in step 5 and not reprocessed here. See **Applicable Rules citation consistency** in the markdown-only reference for the full semantics and the promotion criterion that governs when this check graduates from advisory to blocking.
+
+<!-- audit:ignore-promotion -->
+12. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec whose review block has drifted to blocking — see the Review state drift section in the markdown-only reference below.
 
 ## Markdown-only reference
 
@@ -79,7 +83,7 @@ For each scenario file (`scenarios/{slug}.md`):
 
 - A YAML frontmatter block exists at the top of the file.
 - The frontmatter parses as valid YAML.
-- Either the `section` field (new schema) or the legacy `spec-ref` field is present and non-empty. New scenarios written by `/papur:ask` use `section`; pre-017 scenarios written before `section` existed may still carry `spec-ref`. Either field satisfies the check.
+- Either the `section` field (new schema) or the legacy `spec-ref` field is present and non-empty. New scenarios written by `/papur:amend` use `section`; pre-017 scenarios written before `section` existed may still carry `spec-ref`. Either field satisfies the check.
 
 Reference: the schema is canonically declared in `framework/constitution.md` §text-first-artifacts.
 
@@ -87,7 +91,7 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 
 - Acceptance criteria section exists with at least one checkbox item
 - No placeholder or empty acceptance criteria
-- Open questions consistent with status (`clarified` or later must have none). When this check fails — a spec at `clarified` / `planned` / `in-progress` with one or more open questions in the body — the spec is in the recovery state defined by spec 014. Suggested fix: run `/papur:clarify` (its recovery path will revert status to `draft` and walk the questions), or `/papur:ask` on a fresh question (which performs the back-edge automatically).
+- Open questions consistent with status (`clarified` or later must have none). When this check fails — a spec at `clarified` / `planned` / `in-progress` with one or more open questions in the body — the spec is in the recovery state defined by spec 014. Suggested fix: run `/papur:clarify` (its recovery path will revert status to `draft` and walk the questions), or `/papur:amend` on a fresh question (which performs the back-edge automatically).
 - No implementation code blocks (function signatures, package paths, language-specific snippets) in the spec — those belong in plan.md. Format examples, directory structures, and user-facing commands are acceptable when they define behavioral contracts.
 
 ### Artifact completeness (blocking)
@@ -120,6 +124,20 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 - Event types mentioned in spec or plan align with `specs/events.md`
 - Error codes follow the convention from `specs/errors.md`
 - Data model definitions do not conflict with other specs' data-model.md files
+
+### Cross-service references (advisory)
+
+A spec's derived `references:` frontmatter index records each cross-service reference as a `{service, spec}` pair, harvested from body links to a registered service's canonical repo URL (see [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md)). On the runtime path the `resolve-references` primitive classifies each entry; when the runtime is unavailable, classify each entry with the host's file tools — read `.govern.toml` and the linked spec directly, with **no shell-pipeline substitution**. The repo URL is identity and navigation only and is **never fetched**; status is read from the local checkout.
+
+For each `{service, spec}` entry, in index order, decide the outcome by what can be proven, then map it to a severity:
+
+- **`broken`** (Advisory finding) — the service is registered in `.govern.toml` `[services]` and its checkout `path` is reachable, but the target `spec.md` does not resolve (renamed, moved, deleted, or mistyped upstream, or the URL is malformed). A provable defect in *this* spec — the cross-repo analog of a broken sibling link — surfaced on every run as an **Advisory** finding (non-blocking, because references are informative and never load-bearing). Suggested fix: correct or remove the reference link in the spec body, then re-run the harvest generator.
+- **`unregistered`** (informational, not a finding) — the reference's repo matches no `[services]` entry. A plain navigational link; status was not attempted, so nothing is broken. Surface it with a pointer to `/papur:link` to register the service.
+- **`not-checked-out`** (informational, not a finding) — registered, but the local `path` is missing or not a usable checkout. Nothing can be proven without a checkout, so this is **never** reported as broken.
+- **`status-unreadable`** (informational, not a finding) — the target file exists but its `status` cannot be read (no or malformed frontmatter, missing or out-of-set `status`, or the link targets a scenario, which has no status). The defect is upstream's, not this spec's.
+- **`ok`** (no finding) — the reference resolves and the linked lifecycle `status` is readable. A clean reference.
+
+The load-bearing line is **provably broken** (a finding) versus **can't check** (an informational unknown): a broken link never hides behind a benign unknown, and an unknown is never escalated to a defect. This classification matches the `resolve-references` primitive and the `/papur:status` readout exactly — the three surfaces share one contract and none wraps another.
 
 ### Review state drift (blocking)
 
@@ -185,7 +203,7 @@ Read inputs:
 
 Checks:
 
-- **Generator drift** — run `scripts/gen-readme-table.sh --dry-run` and `scripts/gen-help-tables.sh --dry-run` (when the scripts exist in the project). Non-empty diff means the README Feature Specs table or the help.md command tables are out of sync with their sources. Report each as `Generator out of sync: {script}; the next commit will resolve.`
+- **Generator drift** — run `scripts/gen-help-tables.sh --dry-run` (when the script exists in the project). Non-empty diff means the help.md command tables are out of sync with their sources. Report it as `Generator out of sync: {script}; the next commit will resolve.`
 - **Anchor resolution** — every `§<name>` reference in any installed command file (typically in `Reference: §<first>, §<second>` Scope-Boundaries lines) resolves to a corresponding marker in `constitution.md`.
 - **Command frontmatter completeness** — every `.md` file in the installed commands directory has a `description:` frontmatter field; the same check applies to `.claude/commands/govern.md` when that file exists. Files whose body documents an `$ARGUMENTS` parameter additionally have `argument-hint:`. Report missing fields; do not check value content.
 

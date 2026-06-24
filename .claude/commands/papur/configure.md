@@ -26,6 +26,8 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    **Govern state files (no per-write confirmation):**
    - `Edit(.govern.session.toml)`
    - `Write(.govern.session.toml)`
+   - `Edit(.govern.toml)`
+   - `Write(.govern.toml)`
 
    **Web access:**
    - `WebFetch`
@@ -59,6 +61,7 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `Bash(gh api *)`
    - `Bash(mkdir -p *)`
    - `Bash(chmod +x *)`
+   - `Bash(command -v *)`
 
    **Build / lint:**
    - `Bash(make *)`
@@ -88,6 +91,7 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `mcp__gvrn__check-stuck`
    - `mcp__gvrn__validate-frontmatter`
    - `mcp__gvrn__resolve-anchor`
+   - `mcp__gvrn__resolve-references`
    - `mcp__gvrn__traverse-deps`
    - `mcp__gvrn__check-rule-ids`
    - `mcp__gvrn__run-generator`

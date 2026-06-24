@@ -19,11 +19,11 @@ The same `govern.md` supports every agent the framework knows about. The set of 
 
 ## Instructions
 
-> **For agent runtimes**: backticked primitive names in this section (`fetch-archive`, `extract-archive`, `apply-manifest`, `merge-managed-block`, `enforce-manifest`) map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `fetch-archive`). Hosts wrap them with a server-name prefix taken from `.mcp.json` (Claude: `mcp__gvrn__fetch-archive`; Auggie: `mcp:gvrn:fetch-archive`). When the server is registered for your session, **call the corresponding tool** for each step listed below — that is the deterministic path. When it is not registered, walk the markdown-only reference below (`tar -xzf`, `curl`, etc.) to produce the same result. The two paths share a contract; neither one wraps the other.
+> **For agent runtimes**: backticked primitive names in this section (`fetch-archive`, `extract-archive`, `apply-manifest`, `merge-managed-block`, `enforce-manifest`) map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `fetch-archive`). Hosts wrap them with a server-name prefix taken from the agent's MCP registration (Claude: `mcp__gvrn__fetch-archive`; Auggie: `mcp:gvrn:fetch-archive`). When the server is registered for your session, **call the corresponding tool** for each step listed below — that is the deterministic path. When it is not registered, walk the markdown-only reference below (`tar -xzf`, `curl`, etc.) to produce the same result. The two paths share a contract; neither one wraps the other.
 
 **Procedural fidelity.** Execute the steps below as written. The only confirmation prompts to issue are those the procedure specifies: project inputs (§Inputs), agent-selection prompts on `--add-agent` / first-run (§Agent Selection), the registry-driven migration prompts (§Pre-run Migrations — outer "apply N pending migrations" prompt plus any per-entry inner prompts the procedure files specify), and per-category workflow prompts (§Workflow recommendation, step 8). Do not stop to warn about uncommitted edits to update-strategy files, custom slash commands that **Slash command cleanup** is about to remove, or "data loss" from the stale → write-and-abort path. The procedure already encodes safety: `.govern.toml` `[pinned] files` is the opt-out, the stale path writes upstream and aborts cleanly (recoverable from git), and slash-command cleanup is unconditional for unpinned files. Extra prompts duplicate information the procedure already gives the user and stall routine runs.
 
-1. The walker context carries the inputs the host has already gathered and validated: project (the destination project name), description (one-line project description), languages (comma-separated), agents (registry keys), framework-version (release tag), archive-url and sha256-url (computed from framework-version), staging-dir, substitutions-map, manifest-entries (the per-strategy list described in **Shared Files** and **Per-Agent Scaffolding**), pinned-list (from `.govern.toml`'s `[pinned] files` block), gitignore-block (the `.claude/`, `specs/.cache/`, etc. lines), host-block (the cli-config-dir and project values the runtime reads at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`), enforce-directories (the slash-command directories whose top-level `*.md` files are pruned to the manifest), and the per-agent govern-install entry with `keep-literals: ["project", "cli-config-dir"]`. The host runs the markdown-only reference below to collect inputs, derive registry values, validate `.govern.toml`, and seed context; the runtime walks the procedure that follows.
+1. The walker context carries the inputs the host has already gathered and validated: project (the destination project name), description (one-line project description), languages (comma-separated), agents (registry keys), framework-version (release tag), archive-url and sha256-url (computed from framework-version), staging-dir, substitutions-map, manifest-entries (the per-strategy list described in **Shared Files** and **Per-Agent Scaffolding**), pinned-list (from `.govern.toml`'s `[pinned] files` block), gitignore-block (the `.claude/`, `.augment/`, `.agents/`, `.opencode/`, `specs/.cache/`, etc. lines), host-block (the `project` value — the team-shared slash-command namespace — written to committed `.govern.toml`, plus the per-contributor `cli-config-dir` written to the gitignored `.govern.session.toml` since teammates may use different agents; the runtime reads both at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`), enforce-directories (the slash-command directories whose top-level `*.md` files are pruned to the manifest), and the per-agent govern-install entry with `keep-literals: ["project", "cli-config-dir"]`. The host runs the markdown-only reference below to collect inputs, derive registry values, validate `.govern.toml`, and seed context; the runtime walks the procedure that follows.
 
 2. Invoke `fetch-archive` (MCP: `fetch-archive`) to download the framework tarball. The primitive verifies the sha256 against a sidecar URL when one is supplied; without a sidecar (the live-on-main case, since GitHub's auto-generated source tarballs ship without sidecars) it returns the computed digest and `verified: false`, leaving any out-of-band verification to the host. A sidecar mismatch halts the procedure with an `error` envelope so no partial state lands in the destination tree.
 
@@ -31,9 +31,9 @@ The same `govern.md` supports every agent the framework knows about. The set of 
 
 4. Invoke `apply-manifest` (MCP: `apply-manifest`) with the host-built manifest entries and the pinned list. The primitive walks each entry, applies the per-entry strategy (update for framework-owned files, create for adopter-seedable files, skip-if-conflict for adopter-owned templates — the three strategy values defined in **Shared Files** below), short-circuits on the pinned list, returns aggregate counts the host surfaces in the completion message. This single call replaces the per-file update / create / skip loops the markdown-only reference describes below.
 
-5. Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.gitignore` with `marker-style: "line-prefix"` and `marker: "govern"` to install or update the framework-managed block (the `.claude/`, `specs/.cache/`, etc. lines). First-run creates the file; subsequent runs update only the region between the `# govern` preamble line and the next blank line, preserving the rest of the file byte-for-byte. Replaces the inline `grep` check the markdown-only reference describes for the `.gitignore` merge step.
+5. Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.gitignore` with `marker-style: "line-prefix"` and `marker: "govern"` to install or update the framework-managed block (the `.claude/`, `.augment/`, `.agents/`, `.opencode/`, `specs/.cache/`, etc. lines). First-run creates the file; subsequent runs update only the region between the `# govern` preamble line and the next blank line, preserving the rest of the file byte-for-byte. Replaces the inline `grep` check the markdown-only reference describes for the `.gitignore` merge step.
 
-6. Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.govern.toml` with `marker-style: "line-prefix"`, `marker: "govern (host)"`, and a block carrying the resolved cli-config-dir and project values (the host-block from step 1). First-run creates the file with just the managed block; subsequent runs update only the region between the `# govern (host)` preamble line and the next blank line, preserving every other `.govern.toml` section (`[pinned]`, `[workflows]`, `[migrations]`, `[review]`) byte-for-byte. The runtime reads these values at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; without the block the runtime falls back to `.claude` / repo directory basename — fine for the framework's own repo, broken for any adopter whose layout doesn't match the defaults. See §Project Configuration for the `[host]` schema.
+6. Establish the host configuration, split by audience. (a) Invoke `merge-managed-block` (MCP: `merge-managed-block`) against `.govern.toml` with `marker-style: "line-prefix"`, `marker: "govern (host)"`, and a block carrying **only** the resolved `project` value (the team-shared slash-command namespace). First-run creates the file with just the managed block; subsequent runs update only the region between the `# govern (host)` preamble line and the next blank line, preserving every other `.govern.toml` section (`[pinned]`, `[workflows]`, `[migrations]`, `[review]`) byte-for-byte — and dropping any legacy `cli-config-dir` key a prior version wrote into the managed block. (b) Invoke `write-session` (MCP: `write-session`) with `cli-config-dir` set to the agent's resolved config-dir and **no** target fields — a host-config write that records the per-contributor agent identity in the gitignored `.govern.session.toml` (preserving any existing target), never in committed config, because teammates on one project may each use a different agent. The runtime reads `project` from `.govern.toml` and `cli-config-dir` from the session file at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; absent either, it falls back to `.claude` / repo directory basename — fine for the framework's own repo, broken for any adopter whose layout doesn't match the defaults. On the markdown-only path, the host writes both the `.govern.toml` `[host]` block and the session-file `cli-config-dir` key with its file-writing tool. See §Project Configuration for the `[host]` schema.
 
 7. Invoke `enforce-manifest` (MCP: `enforce-manifest`) once per directory in the host's enforce-directories list (typically the per-agent slash-command directory). The primitive removes files matching the glob-include arg (default `*.md`) whose relative path is neither in the expected list nor pinned. One call replaces the slash-command manifest enforcement loop the markdown-only reference describes. Adopter cleanup of historical conventions (legacy `skills/` directory, post-005 workflow filename rename, and the rest) is owned by the **Pre-run Migrations** section above and the `framework/migrations.toml` registry it drives.
 
@@ -45,42 +45,67 @@ The same `govern.md` supports every agent the framework knows about. The set of 
 
 The registry lists every supported agent. Per-agent paths and behaviors are derived from these rows — the rest of this file references registry values, not agent names.
 
-| `key` | `name` | `config_dir` | `settings_template` | `rules_file_note` |
-| --- | --- | --- | --- | --- |
-| `claude` | Claude Code | `.claude` | `{ "permissions": { "allow": ["Bash(curl *)", "Bash(ls *)", "Bash(tar *)", "Bash(mktemp *)", "Bash(git status *)", "Bash(git config *)", "Bash(chmod *)", "Bash(awk *)", "Read(/private/var/folders/**/T/govern-*/**)", "Read(//private/var/folders/**/T/govern-*/**)", "Read(/var/folders/**/T/govern-*/**)", "Read(//var/folders/**/T/govern-*/**)", "Read(/tmp/govern-*/**)", "Read(//tmp/govern-*/**)"], "deny": [] } }` | Claude Code reads `CLAUDE.md` natively. |
-| `auggie` | Auggie | `.augment` | `{ "toolPermissions": [ { "toolName": "launch-process", "shellInputRegex": "^curl ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^ls ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^tar ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^mktemp ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git status ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git config ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^chmod ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^awk ", "permission": { "type": "allow" } } ] }` | Auggie reads `CLAUDE.md` natively — no second rules file is needed. |
+| `key` | `name` | `config_dir` | `layout` | `settings_template` | `rules_file_note` |
+| --- | --- | --- | --- | --- | --- |
+| `claude` | Claude Code | `.claude` | `claude-style` | `{ "permissions": { "allow": ["Bash(curl *)", "Bash(ls *)", "Bash(tar *)", "Bash(mktemp *)", "Bash(git status *)", "Bash(git config *)", "Bash(git rev-parse *)", "Bash(git diff *)", "Bash(git ls-files *)", "Bash(chmod *)", "Bash(awk *)", "Bash(command -v *)", "Read(/private/var/folders/**/T/govern-*/**)", "Read(//private/var/folders/**/T/govern-*/**)", "Read(/var/folders/**/T/govern-*/**)", "Read(//var/folders/**/T/govern-*/**)", "Read(/tmp/govern-*/**)", "Read(//tmp/govern-*/**)"], "deny": [] } }` | Claude Code reads `CLAUDE.md` natively. |
+| `auggie` | Auggie | `.augment` | `claude-style` | `{ "toolPermissions": [ { "toolName": "launch-process", "shellInputRegex": "^curl ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^ls ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^tar ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^mktemp ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git status ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git config ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git rev-parse ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git diff ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^git ls-files ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^chmod ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^awk ", "permission": { "type": "allow" } }, { "toolName": "launch-process", "shellInputRegex": "^command -v ", "permission": { "type": "allow" } } ] }` | Auggie reads `CLAUDE.md` natively — no second rules file is needed. |
+| `antigravity` | Antigravity | `.agents` | `antigravity` | `{ "permissions": { "allow": [ "command(curl)", "command(ls)", "command(tar)", "command(mktemp)", "command(git status)", "command(git config)", "command(git rev-parse)", "command(git diff)", "command(git ls-files)", "command(chmod)", "command(awk)", "command(which)" ], "deny": [], "ask": [] } }` | Antigravity reads `AGENTS.md` natively — no second rules file is needed. |
+| `opencode` | OpenCode | `.opencode` | `opencode` | `{ "$schema": "https://opencode.ai/config.json", "permission": { "bash": { "curl *": "allow", "ls *": "allow", "tar *": "allow", "mktemp *": "allow", "git status *": "allow", "git config *": "allow", "git rev-parse *": "allow", "git diff *": "allow", "git ls-files *": "allow", "chmod *": "allow", "awk *": "allow", "command -v *": "allow" } } }` | OpenCode reads `AGENTS.md` natively — no second rules file is needed. |
 
 ### Derived values
 
-For each agent, these paths are computed by convention from the row above. They are **not** stored in the table.
+For each agent, these paths and behaviors are computed by convention from its row — they are **not** stored in the table. Values that are the same for every agent are layout-independent; the rest are selected by the row's `layout` field.
+
+**Layout-independent (every agent):**
 
 | Derived value | Formula |
 | --- | --- |
 | Configure source path | `framework/bootstrap/configure/{key}.md` |
-| Project commands directory | `{config_dir}/commands/{project}/` |
-| `govern` install path | `{config_dir}/commands/govern.md` |
 
-The session state file is `.govern.session.toml` at the repo root for every adopter — not a derived per-agent value. It's gitignored and host-agnostic.
+**Layout-derived (selected by `layout`):**
+
+| Derived value | `claude-style` | `antigravity` | `opencode` |
+| --- | --- | --- | --- |
+| Command/skill path | `{config_dir}/commands/{project}/<name>.md` | `{config_dir}/skills/{project}-<name>/SKILL.md` | `{config_dir}/command/{project}/<name>.md` |
+| Invocation | `/{project}:<name>` | `/{project}-<name>` | `/{project}/<name>` |
+| `govern` install path | `{config_dir}/commands/govern.md` | `{config_dir}/skills/govern/SKILL.md` | `{config_dir}/command/govern.md` |
+| Settings file | `{config_dir}/settings.local.json` | `{config_dir}/settings.json` | `opencode.json` (repo root; same file as MCP wiring) |
+| Permission shape | `permissions.allow/deny` (Claude) / `toolPermissions[]` (Auggie) | `permissions.allow/deny/ask` (action grammar) | `permission` action map (`allow`/`ask`/`deny`) |
+| Native rule-loading dir | — (rules read from shared `specs/rules/`) | `{config_dir}/rules/<name>.md` | — (rules read from shared `specs/rules/`) |
+| Native rules file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` |
+| Slash-command cleanup glob | `*.md` in the commands dir | `{project}-*/` skill dirs in `skills/` | `*.md` in `command/{project}/` |
+
+The session state file is `.govern.session.toml` at the repo root for every adopter — not a derived per-agent path (the path is uniform across agents). It's gitignored, and it additionally records the per-contributor `cli-config-dir` (see §Session state).
+
+### MCP registration (per-agent)
+
+MCP discovery is **not** layout-derived — it is a per-agent property. A host can share Claude's command/skill layout and native `CLAUDE.md` reading (Auggie does) yet register MCP servers somewhere entirely different. Each agent therefore declares its own MCP registration descriptor; the State-B auto-wire (§gvrn runtime detection) and §MCP wiring branch on the `mechanism` column.
+
+| `key` | MCP target | scope | mechanism | surfaced instruction (when `surface-instruction`) |
+| --- | --- | --- | --- | --- |
+| `claude` | `.mcp.json` (repo root) | `project-committed` | `write-file` | — |
+| `auggie` | `~/.augment/settings.json` | `user-global` | `surface-instruction` | `auggie mcp add gvrn --command gvrn --args "mcp"` |
+| `antigravity` | `~/.gemini/config/mcp_config.json` | `home-level` | `surface-instruction` | edit `~/.gemini/config/mcp_config.json`, then `/mcp` reload |
+| `opencode` | `opencode.json` (repo root) `mcp` block | `project-committed` | `write-file` | — |
+
+- **`write-file`** — govern writes `target` additively at State-B wire time (the additive merge in §MCP wiring). Only `project-committed` agents use it.
+- **`surface-instruction`** — govern writes **no** MCP file; State B surfaces the instruction in the Pre-flight abort and the user runs it once per machine, then restarts. Required for `user-global` / `home-level` agents, whose MCP config lives outside the repo and which govern must not silently mutate.
+- **Antigravity** loads MCP servers only from home-level `~/.gemini/config/mcp_config.json`; project-local `.agents/mcp_config.json` is **ignored** (verified against the live `agy` CLI). There is no scriptable `agy mcp add`, so registration is a config-file edit plus a `/mcp` reload.
 
 ### Adding a new agent
 
-A new agent is one row above plus two satellite files:
+A `claude-style` agent (markdown commands under `{config_dir}/commands/{project}/`, reads `CLAUDE.md`) is a one-row registry append plus an MCP registration entry plus two satellite files:
 
-1. Append a row with the five required fields.
-2. Add `framework/bootstrap/configure/{key}.md` with the agent's full permission set in its native settings format.
-3. Add a curl snippet for the new agent to the README's adoption section.
+1. Append a row with the six fields (`layout: claude-style`).
+2. Add a row to §MCP registration (per-agent). MCP discovery is per-agent, not layout-derived, so even a `claude-style` agent must declare its own `target` / `scope` / `mechanism` — it is **not** inherited from the layout.
+3. Add `framework/bootstrap/configure/{key}.md` with the agent's full permission set in its native settings format.
+4. Add a curl snippet for the new agent to the README's adoption section.
 
-No other changes are required.
+An agent on a **different layout** (a new value in the `layout` column) additionally needs its branch added to §Derived values and the layout-keyed steps in §Per-Agent Scaffolding and §Permission Setup — the work the `antigravity` and `opencode` layouts each introduced. (MCP registration is per-agent regardless of layout, covered by step 2 above.)
 
 ## Inputs
 
-Collect from `$ARGUMENTS` or prompt the user interactively. When using AskUserQuestion, every question **must** include an `options` array with 2–4 example choices (the user can always select "Other" for custom input):
-
-1. **Project name** — lowercase, alphanumeric, hyphens allowed. Used for `{project}` placeholder substitution and command directory naming. If `$ARGUMENTS` contains a single non-flag word, use it as the project name and prompt for the remaining inputs. Example options: the current directory name, `my-service`.
-2. **Project description** — one-line description for AGENTS.md. Example options: `A new microservice`, `CLI tool for X`.
-3. **Primary language(s)** — comma-separated list for .gitignore language patterns. Example options: `Go`, `Python`, `Node`, `Go, Python`.
-
-Validate the project name: must be lowercase, alphanumeric, and hyphens only. If invalid, reject with: "Project name must be lowercase, alphanumeric, and hyphens only."
+The project inputs are the **project name**, a one-line **description**, and the primary **language(s)**. From `$ARGUMENTS`, extract the project name now (a single non-flag word, if present) and recognize the flags below. **Do not prompt for any missing project input here** — interactive collection is deferred to **§Collect Project Inputs**, which runs *after* the **Pre-flight Phase**. Collecting them earlier means a pre-flight abort (a stale `govern.md` or a freshly-wired gvrn) discards the user's freshly-typed answers and forces them to re-enter everything on the restart. Nothing before §Collect Project Inputs — the pre-flight checks, agent selection, permission seeding, and the Pre-flight Phase itself — needs the interactive inputs; they need only `$ARGUMENTS` and the project's on-disk layout.
 
 Recognized flags in `$ARGUMENTS`:
 
@@ -118,17 +143,108 @@ The user must end up with at least one selected agent in every path. Removing an
 
 For each selected agent, before fetching any files:
 
-1. Read `{config_dir}/settings.local.json` (create it if missing, with the agent's `settings_template` from the registry).
-2. Merge the agent's `settings_template` entries into the existing file: add any entries that are missing, do not deduplicate or reorder anything else, and do not overwrite entries the user or `/{project}:configure` previously added.
+1. Read the agent's settings file — `{config_dir}/settings.local.json` for `claude-style`, `{config_dir}/settings.json` for `antigravity`, or the **repo-root `opencode.json`** for `opencode` (the same file as OpenCode's MCP-wiring target — settings and MCP wiring share one file; create it if missing, with the agent's `settings_template` from the registry; for `opencode`, merge into the adopter's existing `opencode.jsonc` instead if that is where their config lives).
+2. Merge the agent's `settings_template` entries into the existing file additively: add any entries that are missing, do not deduplicate or reorder anything else, and do not overwrite entries the user or `/{project}:configure` previously added. For `claude-style` the entries live under `permissions.allow`/`permissions.deny` (Claude) or `toolPermissions` (Auggie); for `antigravity` they live under `permissions.allow`/`permissions.deny`/`permissions.ask`; for `opencode` they live under the `permission` action map (preserving `$schema` and every other top-level key).
 3. Write the file if anything was added.
 
-This prevents repeated permission prompts during the fetch and scaffolding phases. The full permission set is applied later by `/{project}:configure`.
+This prevents repeated permission prompts during the fetch and scaffolding phases. The full permission set is applied later by `/{project}:configure` (which writes the same per-layout settings file). The seed also includes the gvrn **binary probe** (`command -v gvrn` for `claude-style`, Auggie, and `opencode`, `which gvrn` for `antigravity`) so the **Pre-flight Phase**'s State B/State C probe does not prompt on routine runs.
 
-## govern.md Self-Update Check
+### gvrn runtime auto-wiring
 
-Before any other fetching, scaffolding, or migration, verify the running session's `govern.md` instructions are current. The check is its own phase — ahead of pre-run migrations and the full archive fetch — so a stale-detected abort does not leave any other write on disk and does not pay the cost of fetching the multi-hundred-KB archive on a run that is going to abort anyway.
+`/govern` wires the optional gvrn runtime automatically when its binary is detected on the session's `PATH` but not yet registered as an MCP server — the **Pre-flight Phase → State B** path. (This replaces the previous model where the runtime was a separate, hand-wired install.) Wiring depends on the agent's MCP registration `mechanism` (§MCP registration): a `write-file` agent gets its MCP file written; a `surface-instruction` agent gets a one-line registration command surfaced for the user to run (govern never writes the user's home config) — see **gvrn runtime detection → MCP wiring** for the per-mechanism rules. In the same pass, either way, `/govern` adds the **gvrn tool permissions** to the settings file so the next session calls the runtime without a per-tool prompt:
 
-### Small fetch
+- **Claude** (`permissions.allow`): `mcp__gvrn__*`
+- **Antigravity** (`permissions.allow`): `mcp(gvrn/*)`
+- **Auggie** (`toolPermissions`): `{ "toolName": "mcp:gvrn:*", "permission": { "type": "allow" } }` if Auggie's matcher honors the wildcard, otherwise the enumerated `mcp:gvrn:<tool>` set `/{project}:configure` already installs.
+- **OpenCode** (`permission`): `"gvrn*": "allow"` (a single glob in the root `opencode.json` `permission` map).
+
+The wildcard is the minimal bootstrap grant; the enumerated per-tool set stays owned by the generated block in `/{project}:configure`'s permission file and coexists harmlessly (exact-match dedup leaves both). Both the wiring write and this permission write are additive and idempotent and follow the same merge rules as the seed above — no existing entry is removed, reordered, or overwritten. There is **no new confirmation prompt**: the wiring is disclosed by the **Pre-flight abort** message, which names every file written — consistent with the §Procedural-fidelity rule the silent seed writes already follow. The runtime remains an optional install (the binary is still installed out of band; see the README's Runtime section) — `/govern` automates only the MCP registration once the binary is present.
+
+## Pre-flight Phase
+
+Run a single pre-flight phase after the **Permission Setup** seed (so the gvrn binary probe is pre-authorized) and before **Pre-run Migrations** and the full archive fetch. The phase owns two restart-requiring checks — **gvrn runtime detection** and the **govern.md self-update check** — that can each force the session to restart: gvrn detection to load a newly-wired MCP server, the self-update check to load a fresh `govern.md`. Neither pays the cost of the multi-hundred-KB archive; both run on a small fetch or no fetch, so a restart-triggering abort never leaves archive work on disk.
+
+The phase runs both checks, accumulates every restart-requiring write into a **pending-restart set**, and at the end emits a **single combined abort** if that set is non-empty (see **Pre-flight abort**). If neither check needs a restart, the run proceeds to **Pre-run Migrations**. Running both checks before the single abort is what collapses the worst case — a stale `govern.md` on an adopter who has never wired gvrn — into one restart instead of two.
+
+### gvrn runtime detection
+
+Detect whether the optional gvrn runtime is available and, when its binary is installed but not yet wired into this project, register it so the next session can run the deterministic path. Detection resolves to one of three states — A (runtime live this session), B (binary present, not wired), C (absent); the **Detection mechanism** and per-state behavior follow in the subsections below.
+
+#### Detection mechanism
+
+Two independent probes resolve the state:
+
+- **Tool-inventory introspection (State A).** Inspect your own available-tool inventory for any `gvrn`-namespaced MCP tool — `mcp__gvrn__*` on Claude Code, `mcp:gvrn:*` on Auggie and antigravity — counting deferred or lazily-loaded tool names as present (a host that lists tool names before exposing their schemas still has the runtime registered). Any match ⇒ **State A**. This needs no shell and no permission; you always know your own tools.
+- **Binary probe (State B vs. State C).** Only when introspection finds no `gvrn` tool, run a binary probe — `command -v gvrn` on `claude-style`, Auggie, and `opencode`, `which gvrn` on `antigravity` (whose token-prefix permission grammar matches `which` cleanly). The probe is pre-authorized by the **Permission Setup** seed, so it does not prompt on routine runs. There is no non-shell way to detect an installed-but-unregistered binary — anything a tool could answer would already be **State A**. If the probe cannot run (no shell granted) or is denied, classify the run as **State C** — a harmless false negative; detection never hard-fails.
+
+#### State A — runtime live this session
+
+A `gvrn`-namespaced tool is available to this session, so the runtime is live and the rest of the run takes the **deterministic primitive path**. gvrn contributes nothing to the **pending-restart set**, and detection emits no message.
+
+State A is a **binding execution contract, not a preference.** Detecting the runtime and then walking the prose `curl`/`tar`/`python3` path anyway is the exact failure 029 exists to prevent — it spends the markdown path's tokens despite a cheaper path being live, and it is what makes the State-B wire-and-restart pointless. For the rest of this run:
+
+- **Every step that names a backticked primitive** — a bare name (`fetch-archive`, `extract-archive`, `apply-manifest`, `merge-managed-block`, `enforce-manifest`, `substitute-templates`, `merge-permissions`, `merge-claude-md`, `run-generator`, …) that matches a `gvrn` tool in your inventory — **MUST be performed by calling that MCP tool** (`mcp__gvrn__<primitive>` on Claude, `mcp:gvrn:<primitive>` on Auggie/antigravity; mapping per §Instructions).
+- **The shell commands shown under those steps** (`curl`, `tar -xzf`, `python3`, `awk`, byte-compares, hand-authored scaffold loops) are the **State-B/C fallback specification.** In State A they document the contract each tool fulfills; they are **not instructions to execute.** Do not run them. If you are about to run `curl`/`tar`/`python3` for a step that names a primitive, stop — that is the fallback path leaking into a State-A run; call the tool instead.
+- **Steps with no backticked primitive run as shown in every state** — the per-language `.gitignore` `curl` against `github.com/github/gitignore`, `git config core.hooksPath`, `chmod`, the git repo / tracked-file checks, and the §Collect Project Inputs prompts have no tool equivalent.
+- **If a primitive call errors** — e.g., a too-old wired `gvrn` surfaces a parse error per [spec 022 §Versioning enforcement](../022-deterministic-runtime/spec.md) — fall back to **that step's** shell specification for that one step and continue; do not abandon the deterministic path for the whole run.
+
+#### State B — binary present, not wired
+
+The binary probe succeeded but no `gvrn` tool is available to this session. In order:
+
+1. Register the `gvrn` server per the agent's MCP registration `mechanism` (§MCP registration; details in **MCP wiring**): for `write-file`, write the MCP file additively; for `surface-instruction`, write **no** MCP file — the registration command is surfaced in the abort (step 3) for the user to run once per machine.
+2. Add the permission entries needed to call the `gvrn` tools (see **Permission Setup**), so the next session calls them without a prompt. This write is the same for every agent regardless of `mechanism` — it targets the project-level settings file, not the MCP-server location.
+3. Add the wiring (and the permission write) to the **pending-restart set** and contribute this notice to the combined **Pre-flight abort**, naming every file written:
+
+> **gvrn runtime detected.** The `gvrn` binary is installed but was not registered for this project, so `/govern` could not use the faster deterministic runtime this run.
+
+The abort takes the form matching the selected agent's `mechanism`:
+
+- **`write-file` agent** (e.g. Claude): "It has now been wired in so the next session runs through the runtime, which uses far fewer tokens. Files written: {comma-separated paths — the wiring file, and the settings file when permission entries were added}."
+- **`surface-instruction` agent** (e.g. Auggie): "{Agent} registers MCP servers in your user-level config, which `/govern` does not write. To enable the faster runtime, run this once, then start a fresh session: `{the agent's surfaced instruction from §MCP registration}`. Files written: {the settings file, when permission entries were added}."
+
+State B issues **no separate consent prompt** — any file writes are additive and idempotent, matching the silent **Permission Setup** writes; the abort's file list (and, for a `surface-instruction` agent, the one-line command) is the disclosure. There is no opt-out flag for auto-wiring.
+
+#### State C — binary absent
+
+The binary probe failed, could not run, or was denied. Proceed on the markdown path exactly as today; gvrn contributes nothing to the **pending-restart set**. After scaffolding, the **Post-Scaffolding Output** emits one tip line noting that installing gvrn reduces token use.
+
+#### MCP wiring
+
+How State B registers `gvrn` depends on the agent's MCP registration `mechanism` (§MCP registration). For the `mcpServers`-shaped agents (Claude/Auggie/Antigravity) the server entry is a `mcpServers` map keyed by name; only the **location** (and whether govern writes it) differs:
+
+```json
+{ "mcpServers": { "gvrn": { "command": "gvrn", "args": ["mcp"] } } }
+```
+
+OpenCode uses a different shape — an `mcp` key with a typed local-server entry — written into the committed root `opencode.json` (the OpenCode sub-case below):
+
+```json
+{ "mcp": { "gvrn": { "type": "local", "command": ["gvrn", "mcp"], "enabled": true } } }
+```
+
+**`write-file` agents** (scope `project-committed` — Claude and OpenCode). govern writes the agent's `target` MCP file from §MCP registration, using that agent's server-entry shape — **Claude:** `.mcp.json` at the repo root, the `mcpServers` map, `{ "command": "gvrn", "args": ["mcp"] }`; **OpenCode:** the committed root `opencode.json` (or the adopter's existing `opencode.jsonc`), the `mcp` map, `{ "type": "local", "command": ["gvrn", "mcp"], "enabled": true }`. The write **updates the file in place — it never replaces or truncates it.** Apply the matching case (read `{servers-key}` as `mcpServers` for Claude, `mcp` for OpenCode):
+
+- **Missing file** — create it containing only the `gvrn` entry (for OpenCode, include `"$schema": "https://opencode.ai/config.json"`).
+- **Has `{servers-key}`, no `gvrn`** — add the `gvrn` entry; preserve every other server and every other top-level key (including OpenCode's `$schema` and `permission`).
+- **Already has a `gvrn` entry** — no-op; leave the file byte-unchanged (idempotent re-run).
+- **No `{servers-key}` key** — add the key with just the `gvrn` entry; preserve all other top-level keys.
+- **Not valid JSON** — do **not** touch the file. Skip wiring, warn the user to repair it, and degrade to the markdown path for this run (treat as **State C**). A hand-maintained config is never clobbered.
+
+There is no `gvrn` runtime primitive for this merge: State B is the runtime-absent case by definition, so the write is always host-side.
+
+**`surface-instruction` agents** (scope `user-global` / `home-level` — Auggie and Antigravity). The agent reads MCP servers from a file in the user's **home** directory, shared across all their projects, which govern must **not** write. govern writes no MCP file; instead the **Pre-flight abort** surfaces the agent's registration instruction for the user to run once per machine, then restart:
+
+- **Auggie** — `auggie mcp add gvrn --command gvrn --args "mcp"` (the documented, schema-stable subcommand; it writes `~/.augment/settings.json`).
+- **Antigravity** — add the `gvrn` block above to `~/.gemini/config/mcp_config.json`, then reload via the in-prompt `/mcp` overlay (there is no scriptable `agy mcp add`; project-local `.agents/mcp_config.json` is ignored).
+
+The permission write (State B step 2) still happens for these agents — it targets the project-level settings file the agent reads, independent of the home-level MCP-server location.
+
+### Self-update check
+
+Verify the running session's `govern.md` instructions are current.
+
+#### Small fetch
 
 Create a fresh temp directory used by both this check and the later archive fetch:
 
@@ -149,9 +265,9 @@ If the fetch fails — non-zero `curl` exit, network error, or a 404 — abort t
 
 > Failed to fetch the govern.md self-update check ({reason}). Re-run after checking network connectivity, or report this if it persists.
 
-### Per-agent comparison
+#### Per-agent comparison
 
-For each selected agent, byte-compare `{tempdir}/govern.md.upstream` against the installed `{config_dir}/commands/govern.md` and assign one status:
+For each selected agent, compare the upstream `{tempdir}/govern.md.upstream` against the agent's installed `govern` file and assign one status. For `claude-style` the installed file is `{config_dir}/commands/govern.md` and for `opencode` it is `{config_dir}/command/govern.md` — both installed verbatim (frontmatter included), so the comparison is a direct byte-compare against `{tempdir}/govern.md.upstream`. For `antigravity` the installed file is `{config_dir}/skills/govern/SKILL.md`, which wraps **only the upstream body** in `name: govern` frontmatter — the installer drops `govern.md`'s own frontmatter when wrapping. So compare **bodies on both sides**: strip the leading frontmatter block (the first `---`-delimited region) from the installed `SKILL.md` **and** from `{tempdir}/govern.md.upstream`, then byte-compare what remains. Stripping only the `SKILL.md` side leaves `govern.md`'s frontmatter on the upstream side, which never matches — a false `stale` on every run. The statuses below are assigned from this body-vs-body (antigravity) or file-vs-file (`claude-style` / `opencode`) comparison:
 
 - **`no installed copy`** — the installed file does not exist (first run for this agent). Continue.
 - **`current`** — the two files are byte-identical, **or** the installed file is byte-identical to upstream and listed in `.govern.toml` `pinned.files` (the pin had nothing to suppress this run). Continue.
@@ -160,35 +276,63 @@ For each selected agent, byte-compare `{tempdir}/govern.md.upstream` against the
 
 The check is scoped to **selected agents only** — agents whose `config_dir` exists in the project but are not in this run's selection are not diffed. An unselected stale agent will trip the check on its very next `/govern` run targeting it.
 
-### Stale → write and abort
+#### Stale → defer to pre-flight abort
 
 If any selected agent is recorded as `stale`:
 
-1. For **each stale agent**, copy `{tempdir}/govern.md.upstream` to `{config_dir}/commands/govern.md` (overwrite). The freshly fetched bootstrap lands on disk for every stale agent so the next session in any of them loads the up-to-date instructions. Do not substitute placeholders in this file — `{project}` and `{cli-config-dir}` stay literal, per the existing `govern.md` self-install rule.
-2. Run the **Post-Write Integrity Check** (see below) on each freshly written `govern.md`.
+1. For **each stale agent**, write the freshly fetched upstream to the agent's installed `govern` file (overwrite) so the next session loads the up-to-date instructions. For `claude-style`, copy `{tempdir}/govern.md.upstream` verbatim to `{config_dir}/commands/govern.md`; for `opencode`, copy it verbatim to `{config_dir}/command/govern.md`. For `antigravity`, write `{config_dir}/skills/govern/SKILL.md` as the transformed skill — `name: govern` frontmatter followed by the upstream body — **not** the raw `govern.md` (a raw copy is not a loadable skill). In both cases do not substitute placeholders in the body — `{project}` and `{cli-config-dir}` stay literal, per the `govern` self-install rule.
+2. Run the **Post-Write Integrity Check** (see below) on each freshly written file.
 3. Do not write `govern.md` for non-stale agents — their installed copies already match upstream.
 4. Do not write `govern.md` for `pinned-divergent` agents — the pin opts them out of automatic updates.
-5. Abort the run before any further work. Print:
+5. Add each stale agent's overwrite to the **pending-restart set** and contribute this notice to the combined **Pre-flight abort** — do **not** abort here:
 
 > **The govern command itself has updated.** Your installed copy was behind upstream and the running session is using the older instructions. The freshly fetched copy has been written to disk for stale agents.
 >
 > Stale agents updated: {comma-separated names}.
->
-> Start a new session and re-run `/govern` to pick up the latest version.
 
-Everything past this point — **Pre-run Migrations**, **Project Configuration**, the **Archive fetch and extract**, **Frontmatter Migration**, **Shared Files**, **Per-Agent Scaffolding**, **Security Audit**, and **Post-Scaffolding Output** — is skipped. The only writes this run performed are the additive **Permission Setup** entries and the per-stale-agent `govern.md` overwrite.
+The shared "start a new session and re-run" line and the skip of every later section are owned by **Pre-flight abort**, so a stale `govern.md` and a freshly-wired gvrn surface in one abort and one restart rather than two.
 
-The next `/govern` run in a new session loads the fresh `govern.md`, the self-update check sees `current` (or `no installed copy`) for every agent, and the run proceeds normally without abort.
-
-### Pinned-divergent → continue with advisory
+#### Pinned-divergent → continue with advisory
 
 If a selected agent is recorded as `pinned-divergent`, the run continues normally. After scaffolding, the **Post-Scaffolding Output** includes one advisory line per divergent agent (see **Post-Scaffolding Output → Pinned govern.md advisory**). The advisory is silent on runs where every pinned agent is `current` (the pinned version happens to match upstream this run).
 
 Pinning is an opt-out from automatic updates, not an opt-out from knowing the pin is currently active. When the pinned version actually drifts from upstream, the user usually wants to either review the upstream changes and unpin, or consciously confirm they are staying on the old version. Adopters who are deliberately and indefinitely on an old version see no recurring nag because the advisory only fires when divergence is real.
 
-### Current / no installed copy → continue
+#### Current / no installed copy → continue
 
-When all selected agents are `current` or `no installed copy`, the run proceeds. The temp directory created here is reused by the **Archive fetch and extract** step below — no second `mktemp`, no leaked extra temp directory.
+When all selected agents are `current` or `no installed copy`, the self-update check contributes nothing to the **pending-restart set**. The temp directory created here is reused by the **Archive fetch and extract** step below — no second `mktemp`, no leaked extra temp directory. Whether the run proceeds is decided by **Pre-flight abort** once gvrn detection has also run.
+
+### Pre-flight abort
+
+After both checks have run, inspect the **pending-restart set**:
+
+- **Empty** — no restart is needed. Proceed to **Pre-run Migrations**. (gvrn detection resolved to State A or State C, and the self-update check saw `current` / `no installed copy` / `pinned-divergent` for every selected agent.)
+- **Non-empty** — emit one combined abort and stop before any further work. The message includes every contributed notice and names every file written during this phase:
+  - the gvrn-wiring notice (State B), when gvrn was wired this run — see **gvrn runtime detection → State B**;
+  - the stale-update notice, when any selected agent was `stale` — see **Self-update check → Stale → defer to pre-flight abort**;
+  - a single shared closing line: **Start a new session and re-run `/govern` to pick up the changes.**
+
+Everything past the pre-flight phase — **Collect Project Inputs**, **Pre-run Migrations**, **Project Configuration**, the **Archive fetch and extract**, **Frontmatter Migration**, **Shared Files**, **Per-Agent Scaffolding**, **Security Audit**, and **Post-Scaffolding Output** — is skipped. The only writes performed are the additive **Permission Setup** entries, any per-stale-agent `govern.md` overwrite, and any gvrn wiring plus its permission entries. Because input collection now lives past this point, an aborted run never prompts the user for the project name, description, or languages — they are asked exactly once, in the session that proceeds to scaffold. The next `/govern` run in a new session sees gvrn live (or absent) and every selected agent `current` (or `no installed copy`), and proceeds normally without abort.
+
+## Collect Project Inputs
+
+The Pre-flight Phase has passed (nothing in the pending-restart set), so this run will proceed to scaffold. **Only now** — never before the Pre-flight Phase — resolve the project inputs, so an abort can never discard answers the user just typed.
+
+`.govern.toml` is the persistent home for these answers. Resolve each input from the first available source and **prompt only for what is still missing**:
+
+1. **Project name** — from `$ARGUMENTS` (a single non-flag word, per §Inputs), else `[project] name` in `.govern.toml` (else `[host] project` for configs predating the `[project]` table), else prompt. Used for `{project}` substitution and command directory naming.
+2. **Project description** — from `[project] description` in `.govern.toml`, else prompt. Used for AGENTS.md.
+3. **Primary language(s)** — from `[project] languages` in `.govern.toml`, else prompt. Used for .gitignore language patterns.
+
+On a routine re-run (update mode) `.govern.toml` already carries all three, so this step prompts for nothing. On a first scaffold it prompts for whatever is missing, then **persists all three into `.govern.toml`'s `[project]` table** (`name`, `description`, `languages`; see §Project Configuration), preserving every other section, so the next run — and the session after any State B / stale-`govern.md` restart — reads them back instead of re-asking. `host.project` continues to be written from `project.name` as the runtime's slash-command namespace.
+
+When prompting (AskUserQuestion), every question **must** include an `options` array with 2–4 example choices (the user can always select "Other" for custom input):
+
+- **Project name** — example options: the current directory name, `my-service`.
+- **Project description** — example options: `A new microservice`, `CLI tool for X`.
+- **Primary language(s)** — comma-separated list. Example options: `Go`, `Python`, `Node`, `Go, Python`.
+
+Validate the project name: must be lowercase, alphanumeric, and hyphens only. If invalid, reject with: "Project name must be lowercase, alphanumeric, and hyphens only."
 
 ## Pre-run Migrations
 
@@ -238,8 +382,19 @@ The file is a flat collection of top-level sections. There is no umbrella namesp
 ```toml
 # govern (host)
 [host]
-cli-config-dir = ".claude"
+# `project` only — the team-shared slash-command namespace. The per-contributor
+# `cli-config-dir` lives in the gitignored `.govern.session.toml` (teammates may
+# use different agents), never here.
 project = "gov"
+
+[project]
+# The inputs /govern collects (§Collect Project Inputs), persisted so re-runs
+# and post-restart sessions read them back instead of re-prompting. This table
+# is the source of truth for the answers; host.project below is the derived
+# slash-command namespace, written from project.name.
+name = "my-service"
+description = "A new microservice"
+languages = ["Go", "Python"]
 
 [pinned]
 # Files listed here use 'skip' instead of 'update'.
@@ -279,7 +434,9 @@ declined_categories = ["Linting", "Formatting"]
 # reason = "Pre-OpenAPI; revisit after schema lands (PROJ-1234)"
 ```
 
-`host.cli-config-dir` and `host.project` — the host's per-user config-dir name and the project's slash-command namespace, written by `/govern` into a managed block (`# govern (host)` line-prefix marker) on every run. The runtime reads these at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; both keys fall back to `.claude` / the repo directory basename when the block is missing. Adopters whose layout matches the defaults (this repo, anyone on Claude Code with the conventional `.claude/commands/<project>/`) never observe the difference; Auggie adopters and anyone with a non-standard layout do. The block is idempotent — re-runs update the values rather than appending duplicates.
+`host.project` — the project's slash-command namespace, written by `/govern` into a managed block (`# govern (host)` line-prefix marker) in committed `.govern.toml` on every run (idempotent — re-runs update rather than append). The per-contributor `cli-config-dir` (the agent's config-dir name) is **not** committed: teammates on one project may each use a different agent, so `/govern` writes it to the gitignored `.govern.session.toml` instead (§Instructions step 6). The runtime reads `project` from `.govern.toml` and `cli-config-dir` from the session file at `gvrn exec` time to resolve `{cli-config-dir}/commands/{project}/<name>.md`; both fall back to `.claude` / the repo directory basename when absent. Adopters whose layout matches the defaults (this repo, anyone on Claude Code with the conventional `.claude/commands/<project>/`) never observe the difference; Auggie / OpenCode adopters and anyone with a non-standard layout do.
+
+`project.name`, `project.description`, and `project.languages` — the project inputs collected at §Collect Project Inputs (name; one-line description for AGENTS.md; primary languages for .gitignore patterns), written into the `[project]` table additively (preserving every other section) and read back on every subsequent run so the inputs are asked at most once. `[project]` is the source of truth for the answers; `host.project` is written from `project.name` as the runtime's slash-command namespace (the derived runtime view of the same value), so the two cannot diverge. Editing a `[project]` value re-runs the corresponding scaffold step with the new value on the next `/govern` — the documented way to rename a project or change its languages. The table is host-side state (the host gathers inputs before the runtime walks per §Instructions step 1), so it is written on every adoption path without a runtime primitive.
 
 `pinned.files` — any file listed that would normally use `update` strategy is treated as `skip` instead. Report pinned files in the post-scaffolding summary.
 
@@ -293,20 +450,22 @@ The full schema (allowed values, case-insensitive matching, empty-section behavi
 
 ## File Fetching
 
-Files from the `govern` repo are sourced from a single archive download, extracted into the temp directory established by **govern.md Self-Update Check**, and resolved as local paths for the rest of the run. Per-language `.gitignore` patterns from `github.com/github/gitignore` are **not** part of this archive — they remain separate `curl` calls (see the **.gitignore** subsection of **Shared Files** below).
+Files from the `govern` repo are sourced from a single archive download, extracted into the temp directory established during the **Pre-flight Phase**, and resolved as local paths for the rest of the run. Per-language `.gitignore` patterns from `github.com/github/gitignore` are **not** part of this archive — they remain separate `curl` calls (see the **.gitignore** subsection of **Shared Files** below).
 
-This section runs only after the **govern.md Self-Update Check** passes (no stale agents). On a stale-abort, the archive is never fetched.
+This section runs only after the **Pre-flight Phase** passes (no pending restart — no stale `govern.md` and no freshly-wired gvrn). On a pre-flight abort, the archive is never fetched.
+
+**State A reminder:** the archive fetch/extract and the manifest passes below are primitive-backed. In a State-A run (gvrn live), call the `fetch-archive`, `extract-archive`, `apply-manifest`, and `enforce-manifest` tools — the `curl`/`tar` blocks shown are their State-B/C fallback spec, not commands to execute (see **§Pre-flight Phase → State A — runtime live this session**). The per-language `.gitignore` `curl` is *not* primitive-backed and runs as shown in every state.
 
 ### Archive fetch and extract
 
-Issue exactly one `curl` against GitHub's repo-archive endpoint, downloading into the temp directory established by the self-update check:
+Issue exactly one `curl` against GitHub's archive host, downloading into the temp directory established during the pre-flight phase:
 
 ```text
-curl -fsSL https://github.com/stonean/govern/archive/refs/heads/main.tar.gz \
+curl -fsSL https://codeload.github.com/stonean/govern/tar.gz/refs/heads/main \
   -o {tempdir}/main.tar.gz
 ```
 
-`curl -fsSL` follows the 302 redirect to `codeload.github.com`. The archive's top-level directory is `govern-main/`; the framework files live at `govern-main/framework/...` after extraction.
+This is the direct `codeload.github.com` endpoint — the target that `https://github.com/stonean/govern/archive/refs/heads/main.tar.gz` 302-redirects to. Fetch it directly: the redirect form lands the command on a **new host mid-flight**, which some hosts (e.g. Antigravity) gate with a permission prompt even when a `curl` allow is pre-granted, because the grant matched the original host, not the redirect target. The direct URL has no redirect, so the bootstrap seed's `curl` pre-grant (`command(curl)` / `Bash(curl *)` / the Auggie `^curl` regex matcher) actually covers it. The archive's top-level directory is `govern-main/`; the framework files live at `govern-main/framework/...` after extraction.
 
 After fetching:
 
@@ -317,7 +476,7 @@ If the fetch or extraction fails — non-zero exit from `curl` or `tar`, or a mi
 
 > Failed to fetch or extract the `govern` archive ({reason}). Re-run after checking network connectivity, or report this if it persists.
 
-A missing archive means **every** manifest entry would be missing, so partial scaffolding is impossible — the abort is the correct behavior. The self-update check has already completed by this point, so a stale `govern.md` would have already been written and the run would have aborted earlier.
+A missing archive means **every** manifest entry would be missing, so partial scaffolding is impossible — the abort is the correct behavior. The pre-flight phase has already completed by this point, so a stale `govern.md` or a freshly-wired gvrn would have already triggered the pre-flight abort earlier.
 
 ### Per-file resolution
 
@@ -340,7 +499,7 @@ If `specs/` does not exist (first run), skip this section — there is nothing t
 
 Bring existing spec and scenario files into the YAML frontmatter format declared in `framework/constitution.md` §text-first-artifacts. Migration is idempotent: re-running on an already-migrated project produces no further metadata changes.
 
-This section runs **after the govern.md Self-Update Check** so that a stale-govern abort cannot leave migration changes from old rules on the working tree. The new govern's migration logic — which may differ — is the only logic that ever writes migration changes.
+This section runs **after the Pre-flight Phase** so that a stale-govern abort cannot leave migration changes from old rules on the working tree. The new govern's migration logic — which may differ — is the only logic that ever writes migration changes.
 
 ### Precheck
 
@@ -439,6 +598,7 @@ These files are scaffolded **once per `/govern` invocation**, regardless of how 
 | `framework/rules/security-frontend.md` | `specs/rules/security-frontend.md` |
 | `framework/bootstrap/hooks/govern-pre-commit` | `.githooks/govern-pre-commit` |
 | `scripts/gen-spec-deps.sh` | `scripts/gen-spec-deps.sh` |
+| `scripts/gen-cross-service-refs.sh` | `scripts/gen-cross-service-refs.sh` |
 | `.markdownlint-cli2.jsonc` | `.markdownlint-cli2.jsonc` |
 | `framework/templates/spec/spec.md` | `specs/templates/spec.md` |
 | `framework/templates/spec/plan.md` | `specs/templates/plan.md` |
@@ -462,7 +622,7 @@ These files are scaffolded **once per `/govern` invocation**, regardless of how 
 
 **AGENTS.md** (strategy: skip) — if it exists, leave it alone. If not, fetch `framework/templates/project/agents.md` from the `govern` repo and copy it as `AGENTS.md`, substituting `{project-name}` with the project name and `{One-line project description.}` with the project description.
 
-**CLAUDE.md** (strategy: skip) — if it exists, leave it alone. If not, fetch `framework/templates/project/claude-md.md` from the `govern` repo and copy it as `CLAUDE.md`. Both supported agents read `CLAUDE.md` natively (see each row's `rules_file_note`).
+**CLAUDE.md** (strategy: skip, `claude-style` only) — written only when at least one selected agent is `claude-style`. If it exists, leave it alone. Otherwise, when a `claude-style` agent is selected, fetch `framework/templates/project/claude-md.md` from the `govern` repo and copy it as `CLAUDE.md`. `claude-style` agents read `CLAUDE.md` natively (see each row's `rules_file_note`); the `antigravity` and `opencode` layouts read `AGENTS.md` natively and do not need `CLAUDE.md`, so an **Antigravity-only** or **OpenCode-only** adoption ships no `CLAUDE.md`. (`AGENTS.md` is still written for every adoption, as below.)
 
 **.gitignore** (strategy: merge) — install or update a framework-managed block delimited by a `# govern` line preamble, then dedup any adopter-area copies of canonical patterns. Mirrors the runtime `merge-managed-block` contract (line-prefix style, marker `govern`):
 
@@ -532,17 +692,22 @@ Track the count of newly appended findings (post-deduplication). The total is re
 
 For each selected agent (in registry row order), run these steps with `{config_dir}` resolved to the agent's value and `{key}` to the agent's key.
 
+The steps below describe the **`claude-style`** layout. For an agent whose registry `layout` is **`antigravity`**, apply **### Antigravity layout** below in place of **### Slash commands** and **### Slash command cleanup**, and skip **### Workflow recommendation**. The `govern` self-install, the **Pre-flight Phase**, the **Post-Write Integrity Check**, and **Placeholder Substitution** each carry their own `layout: antigravity` branch in their own sections.
+
+For an agent whose `layout` is **`opencode`**, apply **### OpenCode layout** below in place of **### Slash commands** and **### Slash command cleanup**, and skip **### Workflow recommendation**. OpenCode's installer is a **verbatim markdown file** (no skill wrapper), so the `govern` self-install, **Self-update check**, **Post-Write Integrity Check**, and **Placeholder Substitution** follow the **`claude-style`** path — with the command directory `command/` (singular) and `{cli-config-dir}` resolving to `.opencode`.
+
 ### Slash commands (strategy: update)
 
 Fetch each command template and copy it into `{config_dir}/commands/{project}/`. In each copied file, replace `{project}` with the user-provided project name and `{cli-config-dir}` with `{config_dir}`.
 
 | Source Path | Destination Path |
 | --- | --- |
-| `framework/commands/ask.md` | `{config_dir}/commands/{project}/ask.md` |
+| `framework/commands/amend.md` | `{config_dir}/commands/{project}/amend.md` |
 | `framework/commands/clarify.md` | `{config_dir}/commands/{project}/clarify.md` |
 | `framework/commands/groom.md` | `{config_dir}/commands/{project}/groom.md` |
 | `framework/commands/help.md` | `{config_dir}/commands/{project}/help.md` |
 | `framework/commands/implement.md` | `{config_dir}/commands/{project}/implement.md` |
+| `framework/commands/link.md` | `{config_dir}/commands/{project}/link.md` |
 | `framework/commands/log.md` | `{config_dir}/commands/{project}/log.md` |
 | `framework/commands/plan.md` | `{config_dir}/commands/{project}/plan.md` |
 | `framework/commands/review.md` | `{config_dir}/commands/{project}/review.md` |
@@ -563,7 +728,37 @@ After processing the slash command manifest above, list all `.md` files in `{con
 
 Files listed in `pinned.files` are never deleted — report them as "pinned (kept)" instead.
 
+### Antigravity layout (`layout: antigravity`)
+
+When the agent's registry `layout` is `antigravity`, the two subsections above (**Slash commands**, **Slash command cleanup**) are replaced by the skill-based equivalents below. `{config_dir}` resolves to `.agents`; Antigravity discovers dir-form skills under `{config_dir}/skills/`.
+
+**Skills (strategy: update).** For each row in the slash-command manifest above — the thirteen `framework/commands/*.md` rows plus the `framework/bootstrap/configure/{key}.md` configure row — transform the source into a dir-form skill at `{config_dir}/skills/{project}-{name}/SKILL.md` (instead of copying to `{config_dir}/commands/{project}/{name}.md`):
+
+1. Read the source markdown (frontmatter + body).
+2. Write `{config_dir}/skills/{project}-{name}/SKILL.md` with frontmatter `name: {project}-{name}` and the `description:` carried from the source frontmatter, followed by the source body.
+3. Substitute `{project}` and `{cli-config-dir}` in the body exactly as in the `claude-style` copy (`{cli-config-dir}` → `.agents`).
+
+`{name}` is the command's base name (`specify`, `clarify`, …; the configure row's `{name}` is `configure`). The skills are invoked as `/{project}-{name}`.
+
+**Rules (strategy: update).** Mirror each domain rule file the **Shared Files** manifest placed in `specs/rules/` into `{config_dir}/rules/{name}.md`, so Antigravity loads them natively. Both copies regenerate from `framework/rules/` on every `/govern` run — `specs/rules/` stays the pipeline-read location for every agent; `{config_dir}/rules/` is the Antigravity-native mirror. The `specs/rules/` write itself (in **Shared Files**) is layout-independent and unchanged.
+
+**Skill cleanup (replaces Slash command cleanup).** List the skill directories under `{config_dir}/skills/` whose name matches `{project}-*`. Delete any `{config_dir}/skills/{project}-{name}/` whose `{project}-{name}` is not produced by the skills manifest above and is not listed in `.govern.toml` `pinned.files`; report removals and pinned-keeps as for the `claude-style` cleanup. Skill dirs outside the `{project}-*` namespace (and the `govern` skill) are adopter/agent territory and are never touched.
+
+### OpenCode layout (`layout: opencode`)
+
+When the agent's registry `layout` is `opencode`, the two subsections above (**Slash commands**, **Slash command cleanup**) are replaced by the equivalents below. `{config_dir}` resolves to `.opencode`; OpenCode discovers markdown commands under `{config_dir}/command/` (singular), namespaced by subdirectory.
+
+**Commands (strategy: update).** For each row in the slash-command manifest above — the thirteen `framework/commands/*.md` rows plus the `framework/bootstrap/configure/{key}.md` configure row — copy the source **verbatim** (frontmatter + body, no skill transform) to `{config_dir}/command/{project}/{name}.md` (instead of `{config_dir}/commands/{project}/{name}.md`). Substitute `{project}` and `{cli-config-dir}` (→ `.opencode`) in the body exactly as in the `claude-style` copy, and carry the `description` frontmatter as-is. `{name}` is the command's base name (the configure row's `{name}` is `configure`). The commands are invoked `/{project}/{name}` — OpenCode namespaces by subdirectory (verified: `command/gov/specify.md` registers as command key `gov/specify`).
+
+**Command cleanup (replaces Slash command cleanup).** List the `.md` files under `{config_dir}/command/{project}/`. Delete any whose base name is not produced by the manifest above and is not listed in `.govern.toml` `pinned.files`; report removals and pinned-keeps as for the `claude-style` cleanup. Files outside the `{project}/` subdirectory are adopter/agent territory and are never touched.
+
+**Rules.** OpenCode reads `AGENTS.md` natively (via its `instructions` resolution) and the pipeline reads the shared `specs/rules/` directly — there is **no** native rules-dir mirror (unlike `antigravity`). Nothing extra to scaffold.
+
+**MCP + permissions.** Both the `gvrn` `mcp` block and the `permission` set live in the committed root `opencode.json` — seeded by §Permission Setup, wired by §gvrn runtime detection (State-B `write-file`), and completed by `/{project}:configure`. See §Derived values and §MCP registration.
+
 ### Workflow recommendation (strategy: create per accepted workflow)
+
+**Skip this entire section when the agent's `layout` is `antigravity` or `opencode`** — workflow scaffolding is deferred for those layouts (the tech-stack-gated workflow commands are not yet adapted); the pipeline commands above are the adoption surface. For `claude-style` agents, proceed as below.
 
 After the slash command cleanup, offer any newly registered workflows that match the project's tech stack and have not yet been scaffolded for this agent. Adopter cleanup of legacy workflow filenames and the legacy `skills/` directory is handled by the **Pre-run Migrations** section earlier in this procedure — see `framework/migrations.toml` entries `workflow-filename-rename` and `skills-to-workflows`.
 
@@ -646,11 +841,11 @@ After the slash command cleanup, offer any newly registered workflows that match
 
 ### Session state
 
-The session state file lives at `.govern.session.toml` at the repo root — host-agnostic, project-name-agnostic, gitignored. The bootstrap does not create it; it's written on the first `/{project}:target` (or its scenario sibling) invocation by the runtime's `write-session` primitive (or, on the markdown-only path, by the host's file-writing tool). Each adopted agent reads from the same file; there is no per-agent session state.
+The session state file lives at `.govern.session.toml` at the repo root — a single uniform path for every adopter, project-name-agnostic, gitignored, and **per-contributor**. It carries two things: the session target (feature, optional scenario, `set-at`), written on each `/{project}:target` (or its scenario sibling) invocation; and the contributor's `cli-config-dir`, written by `/govern` at adoption (§Instructions step 6) — the one place an agent-specific value belongs, since teammates on one project may use different agents. Both are written by the runtime's `write-session` primitive (a target write preserves `cli-config-dir`; a host-config write preserves the target), or on the markdown-only path by the host's file-writing tool. There is no per-agent session state beyond this one file.
 
 ### `govern` self-installation (strategy: update)
 
-Fetch `framework/bootstrap/govern.md` and write it to `{config_dir}/commands/govern.md`. This is the same unified file the user is currently running, copied into every selected agent's command directory so the command is invokable from that agent on subsequent runs.
+Fetch `framework/bootstrap/govern.md` and write it to the agent's `govern` install path: `{config_dir}/commands/govern.md` for `claude-style`, `{config_dir}/command/govern.md` for `opencode`, or `{config_dir}/skills/govern/SKILL.md` for `antigravity`. This is the same unified file the user is currently running, installed into every selected agent so the command is invokable from that agent on subsequent runs. For `antigravity`, wrap the body in `name: govern` frontmatter (the dir-form skill); for `claude-style` and `opencode` the file is the verbatim `govern.md`. The body keeps every placeholder literal (next paragraph).
 
 In this file (and only this file), keep **every** placeholder literal — do **not** substitute anything. `{project}` and `{cli-config-dir}` must stay literal so `govern` itself can read `$ARGUMENTS` and the per-agent config dir on each run; `{project-name}` and `{One-line project description.}` must stay literal because this file's prose *documents* those placeholders for the AGENTS.md template — substituting them would corrupt the documentation, not personalize a value.
 
@@ -658,11 +853,11 @@ After writing, run the **Post-Write Integrity Check** below.
 
 ## Hook Installation
 
-After **Per-Agent Scaffolding** completes, manage the project's git pre-commit hook so generated artifacts (currently spec `dependencies:` frontmatter, future generators if added) stay in sync on every commit.
+After **Per-Agent Scaffolding** completes, manage the project's git pre-commit hook so generated artifacts (currently spec `dependencies:` and `references:` frontmatter, future generators if added) stay in sync on every commit.
 
 Two files participate, with different ownership models:
 
-- **`.githooks/govern-pre-commit`** is govern-owned. Placed by the **Shared Files** manifest with `update` strategy; carries the `# managed-by: govern` sentinel on line 2; rewritten on every `/govern` run unless pinned in `.govern.toml`. Holds the generator orchestration (currently `scripts/gen-spec-deps.sh` plus output staging).
+- **`.githooks/govern-pre-commit`** is govern-owned. Placed by the **Shared Files** manifest with `update` strategy; carries the `# managed-by: govern` sentinel on line 2; rewritten on every `/govern` run unless pinned in `.govern.toml`. Holds the generator orchestration (currently `scripts/gen-spec-deps.sh --staged` and `scripts/gen-cross-service-refs.sh --staged` plus output staging). Both run with `--staged` so a commit only rewrites the specs it touches, never unrelated ones.
 - **`.githooks/pre-commit`** is adopter-owned. Placed by the manifest with `create` strategy on first install; never overwritten thereafter. Initial content invokes `./.githooks/govern-pre-commit`; adopters add their own pre-commit checks above or below that invocation.
 
 This section's job is to wire git up to actually run the outer hook (`git config core.hooksPath .githooks`) without clobbering whatever hook system the project already uses.
@@ -676,7 +871,7 @@ Detection runs in this order — first match wins:
 
 The detection ladder no longer treats `.githooks/pre-commit` itself as a govern-managed file — under the new model the outer file is adopter-owned, so its presence is not a signal that govern installed it. Migration of pre-existing govern-installed hooks (from spec-017 adopters) is handled by the **Migration from spec-017 hook** subsection below, which runs before the detection ladder.
 
-`scripts/gen-spec-deps.sh` ships in the **Shared Files** manifest with `update` strategy. Every `/govern` run refreshes it from upstream so adopters pick up generator fixes automatically. Adopters who have customized the script can list it in `.govern.toml` `pinned.files` to opt out of overwrites.
+`scripts/gen-spec-deps.sh` and `scripts/gen-cross-service-refs.sh` ship in the **Shared Files** manifest with `update` strategy. Every `/govern` run refreshes them from upstream so adopters pick up generator fixes automatically. Adopters who have customized a script can list it in `.govern.toml` `pinned.files` to opt out of overwrites.
 
 ### Migration from spec-017 hook
 
@@ -725,7 +920,7 @@ The Hook Installation section above still runs and may set `core.hooksPath` rega
 
 ## Placeholder Substitution
 
-In every copied file (except `{config_dir}/commands/govern.md` for each selected agent — those keep `{project}` and `{cli-config-dir}` as literal placeholders), replace:
+In every copied file (except each selected agent's installed `govern` file — `{config_dir}/commands/govern.md` for `claude-style`, `{config_dir}/command/govern.md` for `opencode`, `{config_dir}/skills/govern/SKILL.md` for `antigravity` — whose body keeps `{project}` and `{cli-config-dir}` as literal placeholders), replace:
 
 - `{project}` with the user-provided project name (used in commands, README)
 - `{project-name}` with the user-provided project name (used in AGENTS.md template)
@@ -734,7 +929,7 @@ In every copied file (except `{config_dir}/commands/govern.md` for each selected
 
 ## Post-Write Integrity Check
 
-After writing `{config_dir}/commands/govern.md` for any selected agent — whether via the **govern.md Self-Update Check** (stale-write path) or the **`govern` self-installation** manifest step — verify the file starts with `# govern`. If it does not, the write was corrupted — report the error and re-read the source: `{tempdir}/govern.md.upstream` for the self-update path, or `{tempdir}/govern-main/framework/bootstrap/govern.md` for the manifest path. Apply the check independently per agent.
+After writing the agent's installed `govern` file — whether via the **Pre-flight Phase** (stale-write path) or the **`govern` self-installation** manifest step — verify it is well-formed. For `claude-style` (`{config_dir}/commands/govern.md`) and `opencode` (`{config_dir}/command/govern.md`), the file must start with `# govern`. For `antigravity` (`{config_dir}/skills/govern/SKILL.md`), the file must start with a frontmatter block whose `name:` is `govern`, and the body after that frontmatter must start with `# govern`. If the check fails, the write was corrupted — report the error and re-read the source: `{tempdir}/govern.md.upstream` for the self-update path, or `{tempdir}/govern-main/framework/bootstrap/govern.md` for the manifest path. Apply the check independently per agent.
 
 ## Re-Run Behavior
 
@@ -760,13 +955,17 @@ After writing `{config_dir}/commands/govern.md` for any selected agent — wheth
 - **All supported agents already adopted with `--add-agent`** — show the prompt with all agents pre-selected; if the user confirms with no additions, treat it as a routine update and continue silently.
 - **`settings.local.json` already has entries beyond the bootstrap** — only add the curl/ls bootstrap entries if missing. Do not overwrite, deduplicate, or reorder entries added by `/{project}:configure` or by the user.
 - **`govern.md` content already matches the version on disk** — when the manifest's `update` strategy compares fetched content to the installed file, identical content reports as "unchanged" and avoids a redundant write. Same rule applies to per-project `configure.md` and other update-strategy files.
-- **Pinned `govern.md` in `.govern.toml`** — the manifest's `update` strategy still skips the file (no overwrite), and the **govern.md Self-Update Check** never writes pinned files even on the stale-detect path. The check byte-compares anyway: matching upstream → recorded as `current`, no output; divergent from upstream → recorded as `pinned-divergent`, the run continues, and a single advisory line is printed in the post-scaffolding output. A pinned `govern.md` will not pick up upstream changes until the pin is removed, but the user is told once when the pin is currently suppressing real divergence.
+- **Pinned `govern.md` in `.govern.toml`** — the manifest's `update` strategy still skips the file (no overwrite), and the **Pre-flight Phase**'s self-update check never writes pinned files even on the stale-detect path. The check byte-compares anyway: matching upstream → recorded as `current`, no output; divergent from upstream → recorded as `pinned-divergent`, the run continues, and a single advisory line is printed in the post-scaffolding output. A pinned `govern.md` will not pick up upstream changes until the pin is removed, but the user is told once when the pin is currently suppressing real divergence.
 - **Self-update check sees a stale `govern` in an unselected adopted agent** — the check is scoped to selected agents only. The unselected agent's stale copy is not diffed, not written, and does not trigger the abort; it will be detected the next time the user runs `/govern` against it.
-- **Self-update small fetch fails** — clean abort with the error message defined in **govern.md Self-Update Check → Small fetch**. No `govern.md` writes occur, and the archive fetch is skipped. The user re-runs after the transient failure clears.
-- **Archive fetch or extract fails** — clean abort with the error message defined in **File Fetching → Archive fetch and extract**. The self-update check has already passed by this point, so no additional `govern.md` writes are pending; the user re-runs after the transient failure clears.
+- **Self-update small fetch fails** — clean abort with the error message defined in **Pre-flight Phase → Self-update check → Small fetch**. No `govern.md` writes occur, and the archive fetch is skipped. The user re-runs after the transient failure clears.
+- **Archive fetch or extract fails** — clean abort with the error message defined in **File Fetching → Archive fetch and extract**. The pre-flight phase has already passed by this point, so no additional `govern.md` or gvrn-wiring writes are pending; the user re-runs after the transient failure clears.
 - **A required source file is absent from the extracted archive** — warn `Source not found in archive: {source-path}; skipping.` and continue with the remaining manifest entries. Preserves the per-entry "do not abort on a single fetch error" guarantee at the entry level even though the archive itself is fetched once.
 - **First-run prompt with no detected dirs and only one supported agent** — the prompt still appears (the agent must be explicitly chosen), but the single agent is pre-selected. Confirming is one keystroke.
 - **Running `govern.md` cannot infer its own install path** — fall back to no pre-selection in the first-run prompt. The user picks explicitly.
+- **gvrn binary present but unwired (State B)** — the **Pre-flight Phase** registers the runtime per the agent's `mechanism` (writes the MCP config for a `write-file` agent, or surfaces the registration command for a `surface-instruction` agent) plus the gvrn tool permissions, then stops as part of the single combined pre-flight abort. No archive is fetched; the user starts a new session and re-runs. See **gvrn runtime detection → State B**.
+- **gvrn wiring file is malformed JSON** — the wiring write does not touch the file. `/govern` skips wiring, warns the user to repair it, and continues on the markdown path for this run (treated as State C). A hand-maintained MCP config is never clobbered.
+- **gvrn binary probe cannot run or is denied** — the run is classified as State C (binary absent): the markdown path proceeds and the post-scaffolding tip fires. Detection never hard-fails on a host without shell.
+- **Stale `govern.md` on an adopter who has never wired gvrn** — both pre-flight checks contribute writes (a fresh `govern.md` and the gvrn wiring), but the **Pre-flight abort** emits one combined message and the user restarts once, not twice.
 
 ## Post-Scaffolding Output
 
@@ -778,11 +977,20 @@ After scaffolding, display:
 - Any fetch failures encountered
 - Pinned `govern.md` advisory (if applicable — see below)
 - Security audit summary (if applicable — see below)
+- gvrn runtime tip (State C only — see below)
 - Next steps (varies by mode):
+
+### gvrn runtime tip
+
+When the **Pre-flight Phase** resolved to **State C** (no `gvrn` binary detected), append one line after the file summary:
+
+> Tip: this run used the markdown path. Installing the `gvrn` runtime makes `/govern` and the pipeline commands much cheaper in tokens — see [Runtime](https://github.com/stonean/govern#runtime). Once it's on your `PATH`, `/govern` wires it in automatically.
+
+Omit the tip in **State A** (the runtime is already live) and **State B** (the run aborted in pre-flight before this output). State B's file disclosure rides the **Pre-flight abort** message, not this output.
 
 ### Pinned `govern.md` advisory
 
-If the **govern.md Self-Update Check** recorded any selected agent as `pinned-divergent` (the installed `{config_dir}/commands/govern.md` is listed in `.govern.toml` `pinned.files` and differs from upstream), append one advisory line per divergent agent after the file summary and before next steps:
+If the **Pre-flight Phase** recorded any selected agent as `pinned-divergent` (the installed `govern` file (`{config_dir}/commands/govern.md`, or `{config_dir}/skills/govern/SKILL.md` for `antigravity`) is listed in `.govern.toml` `pinned.files` and differs from upstream), append one advisory line per divergent agent after the file summary and before next steps:
 
 > {agent}: govern.md pinned, upstream has changed.
 
@@ -848,4 +1056,4 @@ Re-runs are additive across agents — adopting a new agent leaves existing agen
 
 ## Directory Creation
 
-Create intermediate directories as needed (e.g., `specs/`, `specs/templates/`, `{config_dir}/commands/{project}/`).
+Create intermediate directories as needed (e.g., `specs/`, `specs/templates/`, and — by layout — `{config_dir}/commands/{project}/` for `claude-style`, `{config_dir}/command/{project}/` for `opencode`, or `{config_dir}/skills/` and `{config_dir}/rules/` for `antigravity`).

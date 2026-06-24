@@ -24,8 +24,8 @@ draft → clarified → planned → in-progress → done
 
 Two back-edges keep the lifecycle honest:
 
-- `/papur:ask` reverts a `clarified`, `planned`, or `in-progress` spec to `draft` when a new open question surfaces — `draft` is the only status that tolerates open questions. The next `/papur:clarify` resolves the question and the spec advances forward again.
-- `/papur:ask` reverts a `done` spec to `in-progress` when a new scenario is added (the scenario route) — the scenario captures the change, the spec evolves with it.
+- `/papur:amend` reverts a `clarified`, `planned`, or `in-progress` spec to `draft` when a new open question surfaces — `draft` is the only status that tolerates open questions. The next `/papur:clarify` resolves the question and the spec advances forward again.
+- `/papur:amend` reverts a `done` spec to `in-progress` when a new scenario is added (the scenario route) — the scenario captures the change, the spec evolves with it.
 
 Each feature lives in `specs/NNN-feature-name/` and progresses through these states by running the corresponding command.
 
@@ -52,7 +52,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 
 | Command | Description |
 | --- | --- |
-| `/papur:ask` | Add a question or a scenario to the targeted spec (classifier-driven). |
+| `/papur:amend` | Add a question or a scenario to the targeted spec (classifier-driven). |
 
 <!-- generated:commands-refine:end -->
 
@@ -74,6 +74,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | Command | Description |
 | --- | --- |
 | `/papur:target` | Set the working feature (and optionally scenario) for this session. |
+| `/papur:link` | Register a service so cross-service references resolve to its lifecycle status. |
 | `/papur:status` | Display the pipeline view for all feature specs. |
 | `/papur:help` | Display an overview of the pipeline and its slash commands. |
 
