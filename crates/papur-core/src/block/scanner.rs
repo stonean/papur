@@ -65,6 +65,17 @@ fn is_fence_dashes(text: &str) -> bool {
     text.trim_end_matches([' ', '\t', '\r']) == "---"
 }
 
+/// Capture a layer/frontmatter body: normalize CRLF to LF and drop the single
+/// trailing line terminator, so a CRLF source and its LF twin yield identical
+/// bodies (scenario: crlf-line-endings).
+fn normalize_body(raw: &str) -> String {
+    let mut body = raw.replace("\r\n", "\n");
+    if body.ends_with('\n') {
+        body.pop();
+    }
+    body
+}
+
 /// Flush the pending content run `[start, end)` as a [`Block::Content`], unless
 /// it is empty or all-whitespace (separators between layer blocks are dropped).
 fn flush_content(
@@ -108,8 +119,7 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
         && is_fence_dashes(lines[0].text)
         && let Some(k) = (1..n).find(|&k| is_fence_dashes(lines[k].text))
     {
-        let raw = &source[lines[1].start..lines[k].start];
-        let body = raw.strip_suffix('\n').unwrap_or(raw).to_string();
+        let body = normalize_body(&source[lines[1].start..lines[k].start]);
         let span = Span {
             start_line: 1,
             start_col: 1,
@@ -180,8 +190,7 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
 
         let close = &lines[j];
         let body = if i + 1 < j {
-            let raw = &source[lines[i + 1].start..close.start];
-            raw.strip_suffix('\n').unwrap_or(raw).to_string()
+            normalize_body(&source[lines[i + 1].start..close.start])
         } else {
             String::new()
         };
@@ -204,7 +213,7 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
 
 #[cfg(test)]
 mod tests {
-    use crate::block::{Block, LayerKind, ParseMode, segment};
+    use crate::block::{Block, BlockStream, LayerKind, ParseMode, segment};
 
     fn kinds(blocks: &[Block]) -> Vec<&'static str> {
         blocks
@@ -376,5 +385,40 @@ mod tests {
     fn malformed_frontmatter_degrades_in_lenient() {
         let stream = segment("---\nfoo: [1, 2\n---\n", ParseMode::Lenient).unwrap();
         assert!(meta_body(&stream.blocks).is_none());
+    }
+
+    fn layer_bodies(stream: &BlockStream) -> Vec<String> {
+        stream
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Layer { body, .. } => Some(body.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn crlf_layer_bodies_match_lf() {
+        let lf = "::: meta\ntitle: x\nlang: en\n:::\n\n::: css\n.a\n  color: red\n:::\n";
+        let crlf = lf.replace('\n', "\r\n");
+        let from_lf = segment(lf, ParseMode::Strict).unwrap();
+        let from_crlf = segment(&crlf, ParseMode::Strict).unwrap();
+        assert_eq!(layer_bodies(&from_lf), layer_bodies(&from_crlf));
+        assert_eq!(from_lf.merged_meta(), from_crlf.merged_meta());
+        assert_eq!(
+            from_crlf.css_blocks().collect::<Vec<_>>(),
+            [".a\n  color: red"]
+        );
+    }
+
+    #[test]
+    fn crlf_frontmatter_matches_lf() {
+        let lf = "---\ntitle: x\nlang: en\n---\n\n# Body\n";
+        let crlf = lf.replace('\n', "\r\n");
+        let from_lf = segment(lf, ParseMode::Strict).unwrap();
+        let from_crlf = segment(&crlf, ParseMode::Strict).unwrap();
+        assert_eq!(meta_body(&from_lf.blocks), meta_body(&from_crlf.blocks));
+        assert_eq!(meta_body(&from_crlf.blocks), Some("title: x\nlang: en"));
     }
 }

@@ -71,6 +71,6 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 11. CRLF line endings normalize to LF in layer/frontmatter bodies
 
-- [ ] Implement the behavior described in `scenarios/crlf-line-endings.md`
+- [x] Implement the behavior described in `scenarios/crlf-line-endings.md`
 
 - **Done when**: a CRLF-encoded source and its LF equivalent produce identical layer block bodies and identical merged meta/theme, covered by a test.
