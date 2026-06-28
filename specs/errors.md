@@ -1,100 +1,74 @@
 # Errors
 
-<!-- This is a living document describing your project's error handling conventions.
-     Establish the core format and conventions early, then add error codes
-     as modules are built. -->
+papur is a command-line compiler, so an "error" is a **diagnostic**: a stable
+code, a human-readable message, and a source location. Diagnostics are rendered
+with `miette` (source-highlighted). This document defines the diagnostic format
+and the registry of codes in use; each spec that introduces a code appends it
+here.
 
-## Error Response Format
+## Diagnostic format
 
-<!-- The standard structure for error responses. Example:
+Every diagnostic carries:
 
-All error responses use a consistent JSON envelope:
+- **code** — a stable `PAPUR-` identifier (see naming below).
+- **message** — one human-readable sentence describing the problem.
+- **span** — a source location: a byte offset plus a 1-based line and column,
+  rendered as `file:line:col` with the offending text underlined.
 
-```json
-{
-  "error": {
-    "code": "validation_failed",
-    "message": "One or more fields are invalid.",
-    "details": []
-  }
-}
+A strict-mode parse failure looks like this:
+
+```text
+Error:
+  × PAPUR-P001: unterminated `::: css` fence
+   ╭─[page.papur:3:1]
+ 3 │ ::: css
+   · ───┬───
+   ·    ╰── here
+   ╰────
 ```
 
-The `details` array is optional and used for validation errors (see below).
+## Code naming
 
--->
+Codes are `PAPUR-<Letter><NNN>`: the letter groups by compiler phase and `NNN`
+is a zero-padded number. Codes are **permanent** — once assigned, a code is
+never renumbered or reused, even if the diagnostic moves or is reworded (the
+same stability rule that rule IDs follow). Numbers are grouped into ranges by
+concern, so gaps in the sequence are intentional.
 
-## Error Codes
-
-<!-- Naming convention for error codes and a registry of codes in use. Example:
-
-Error codes use `snake_case` and follow the pattern `{category}_{description}`.
-
-| Code | Category | Meaning |
-| --- | --- | --- |
-| `auth_token_expired` | auth | Access token has expired |
-| `validation_failed` | validation | Request body failed validation |
-| `not_found` | resource | Requested resource does not exist |
-
--->
-
-## Status Mapping
-
-<!-- How error codes map to response status codes or equivalent. Example:
-
-| Category | Status Code |
+| Letter | Phase |
 | --- | --- |
-| `auth_*` | 401 |
-| `forbidden_*` | 403 |
-| `not_found` | 404 |
-| `validation_*` | 422 |
-| `rate_*` | 429 |
-| `internal_*` | 500 |
+| `P` | Parse (block segmentation, frontmatter, …) |
 
--->
+Parse (`P`) ranges:
 
-## Validation Errors
-
-<!-- How per-field validation errors are structured. Example:
-
-Validation errors populate the `details` array with one entry per invalid field:
-
-```json
-{
-  "error": {
-    "code": "validation_failed",
-    "message": "One or more fields are invalid.",
-    "details": [
-      { "field": "email", "code": "required", "message": "Email is required." },
-      { "field": "age", "code": "out_of_range", "message": "Age must be between 0 and 150." }
-    ]
-  }
-}
-```
-
--->
-
-## Logging
-
-<!-- How errors are logged and severity mapping. Example:
-
-All errors are logged with structured fields including the error code,
-request ID, and stack trace (for unexpected errors only).
-
-| Severity | When |
+| Range | Concern |
 | --- | --- |
-| `warn` | Client errors (4xx) — expected, no action needed |
-| `error` | Server errors (5xx) — unexpected, requires investigation |
+| `P001`–`P009` | Fence / block segmentation |
+| `P010`–`P019` | Frontmatter |
 
--->
+## Registry
 
-## Internal vs External Errors
+| Code | Severity | Meaning | Introduced by |
+| --- | --- | --- | --- |
+| `PAPUR-P001` | error | A reserved layer fence was opened but never closed. | 001-file-format |
+| `PAPUR-P010` | error | Leading YAML frontmatter could not be parsed. | 001-file-format |
 
-<!-- Rules for what error information is exposed to callers vs kept internal. Example:
+## Strict vs lenient mode
 
-External responses include the error code and a safe, human-readable message.
-Stack traces, internal identifiers, and infrastructure details are never
-included in responses. They are logged server-side with the request ID
-for correlation.
+papur defaults to **strict** mode: diagnostics are hard errors and the compiler
+exits non-zero. In **lenient** mode (`--lenient`), recoverable parse problems —
+typed content that escaped its fence, malformed frontmatter — degrade to literal
+content instead of erroring. The mode is a parse-time input; see
+[001-file-format](001-file-format/spec.md).
 
--->
+Detecting an unbalanced or dangling `:::` *content* fence is not a 001 concern
+(block segmentation leaves content fences opaque); that diagnostic is owned by
+[002-attribute-syntax](002-attribute-syntax/spec.md), whose fenced-div parser
+tracks fence depth.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| non-zero | One or more diagnostics (strict mode), or an I/O or usage error. |

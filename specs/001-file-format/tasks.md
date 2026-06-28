@@ -54,8 +54,8 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 8. Establish compiler-diagnostic conventions in errors.md
 
-- [ ] Replace the `specs/errors.md` template with the compiler-diagnostic format (code, message, line/col span) and the `PAPUR-P` code registry
-- [ ] Done when errors.md documents `PAPUR-P001` and `PAPUR-P010` and the code-naming convention
+- [x] Replace the `specs/errors.md` template with the compiler-diagnostic format (code, message, line/col span) and the `PAPUR-P` code registry
+- [x] Done when errors.md documents `PAPUR-P001` and `PAPUR-P010` and the code-naming convention
 
 ## 9. Acceptance-criteria test suite
 
