@@ -78,16 +78,17 @@ downstream specs (002/003/009) to parse. This keeps 001 from front-running
 ### Strict vs lenient mode
 
 `ParseMode { Strict, Lenient }`, **default Strict** (matches the project's
-"strict mode is the default" principle). The spec's "typed content outside a
-fence" maps to two strict-mode errors:
+"strict mode is the default" principle). At the segmentation layer the spec's
+"typed content outside a fence" is exactly an **unterminated reserved fence** —
+a layer fence opened with no closing `:::` before EOF → `PAPUR-P001` in strict
+mode. In **Lenient** mode it degrades to `Content` prose with no error (AC3).
+The CLI exposes `--lenient`; Strict is the default.
 
-- An **unterminated** reserved fence (EOF before the closing `:::`) →
-  `PAPUR-P001`.
-- A reserved-layer construct that is otherwise malformed / a dangling typed
-  marker → `PAPUR-P002`.
-
-In **Lenient** mode both degrade to `Content` prose with no error (AC3). The CLI
-exposes `--lenient`; Strict is the default.
+Detecting an unbalanced or *dangling* `:::` content-fence marker requires
+tracking content-fence depth, which 001 deliberately does not do (it leaves
+content fences opaque). That check is owned by the fenced-div parser in
+[002-attribute-syntax](../002-attribute-syntax/spec.md) and is recorded as an
+acceptance criterion there.
 
 ### Extension and filename handling
 

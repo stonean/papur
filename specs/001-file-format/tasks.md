@@ -19,14 +19,14 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 3. Implement the line scanner
 
-- [ ] Recognize reserved layer openers (`meta`/`theme`/`css`/`script`/`html`) at column 0; capture the raw body until the closing `:::`
-- [ ] Accumulate everything else as `Content` spans, leaving content fences (`::: grid`, `::: @web`) and their markers untouched
-- [ ] Compute a correct `Span` (line/col/byte) for every block
-- [ ] Done when `segment()` returns the correct ordered `Block` list for mixed-content fixtures
+- [x] Recognize reserved layer openers (`meta`/`theme`/`css`/`script`/`html`) at column 0; capture the raw body until the closing `:::`
+- [x] Accumulate everything else as `Content` spans, leaving content fences (`::: grid`, `::: @web`) and their markers untouched
+- [x] Compute a correct `Span` (line/col/byte) for every block
+- [x] Done when `segment()` returns the correct ordered `Block` list for mixed-content fixtures
 
 ## 4. Implement strict / lenient mode
 
-- [ ] Strict: unterminated reserved fence → `PAPUR-P001`; malformed/dangling typed marker → `PAPUR-P002`
+- [ ] Strict: unterminated reserved fence → `PAPUR-P001`
 - [ ] Lenient: the same inputs degrade to `Content` prose with no error (AC3)
 - [ ] `ParseMode` defaults to Strict
 - [ ] Done when both modes are covered by tests
@@ -55,7 +55,7 @@ Tasks derived from the [plan](plan.md). Complete in order.
 ## 8. Establish compiler-diagnostic conventions in errors.md
 
 - [ ] Replace the `specs/errors.md` template with the compiler-diagnostic format (code, message, line/col span) and the `PAPUR-P` code registry
-- [ ] Done when errors.md documents `PAPUR-P001` / `P002` / `P010` and the code-naming convention
+- [ ] Done when errors.md documents `PAPUR-P001` and `PAPUR-P010` and the code-naming convention
 
 ## 9. Acceptance-criteria test suite
 

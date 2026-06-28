@@ -7,7 +7,10 @@
 
 use indexmap::IndexMap;
 
+use crate::diagnostic::Diagnostic;
 use crate::span::Span;
+
+mod scanner;
 
 /// A YAML value, as parsed from `::: meta` / `::: theme` blocks and frontmatter.
 /// Aliased here so the YAML backend stays a single swap-point for consumers.
@@ -100,6 +103,20 @@ pub struct BlockStream {
     pub blocks: Vec<Block>,
     /// The mode the source was parsed under.
     pub mode: ParseMode,
+}
+
+/// Segment a `.papur` source into an ordered [`BlockStream`].
+///
+/// In strict mode an unterminated reserved fence is a hard error (`PAPUR-P001`);
+/// in lenient mode it degrades to content. Block *bodies* are not parsed here —
+/// each block holds its raw source text.
+pub fn segment(source: &str, mode: ParseMode) -> Result<BlockStream, Vec<Diagnostic>> {
+    let (blocks, diags) = scanner::scan(source, mode);
+    if diags.is_empty() {
+        Ok(BlockStream { blocks, mode })
+    } else {
+        Err(diags)
+    }
 }
 
 #[cfg(test)]

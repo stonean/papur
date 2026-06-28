@@ -90,9 +90,8 @@ pub struct Diagnostic {
 }
 
 pub enum DiagnosticCode {
-    UnterminatedFence,        // PAPUR-P001 (strict mode)
-    TypedContentOutsideFence, // PAPUR-P002 (strict mode)
-    MalformedFrontmatter,     // PAPUR-P010
+    UnterminatedFence,    // PAPUR-P001 (strict mode)
+    MalformedFrontmatter, // PAPUR-P010
 }
 
 /// The public library entry point. The `.papur` extension guard (AC1) is

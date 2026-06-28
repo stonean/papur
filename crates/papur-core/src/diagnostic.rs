@@ -32,12 +32,15 @@ impl Diagnostic {
 
 /// The stable set of parse diagnostics 001 can emit. Each maps to a permanent
 /// `PAPUR-P` code documented in `specs/errors.md`.
+///
+/// Note: detecting an unbalanced or *dangling* content-fence marker is **not**
+/// in this set — that requires content-fence depth tracking, which block
+/// segmentation deliberately does not do. It is owned by spec 002
+/// (attribute-syntax), whose fenced-div parser tracks depth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticCode {
     /// A reserved layer fence was opened but never closed (strict mode).
     UnterminatedFence,
-    /// A dangling or malformed typed marker appeared outside a fence (strict mode).
-    TypedContentOutsideFence,
     /// Leading YAML frontmatter could not be parsed.
     MalformedFrontmatter,
 }
@@ -47,7 +50,6 @@ impl DiagnosticCode {
     pub fn code(self) -> &'static str {
         match self {
             Self::UnterminatedFence => "PAPUR-P001",
-            Self::TypedContentOutsideFence => "PAPUR-P002",
             Self::MalformedFrontmatter => "PAPUR-P010",
         }
     }
