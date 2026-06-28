@@ -118,6 +118,7 @@ Fenced divs and roled headings both open scopes; the heading scope rule above go
 - [ ] Nested fenced divs produce nested elements; descendant CSS selectors written against parent.child match the emitted structure.
 - [ ] `g.foo` always resolves to a global role definition; `l.foo` always resolves to a local one; an unprefixed `.foo` resolves local-first then global.
 - [ ] An inner fence does not close an outer heading scope opened in the parent fence.
+- [ ] An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
 
 ## Open Questions
 
