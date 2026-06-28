@@ -1,12 +1,12 @@
 ---
-status: in-progress
+status: done
 dependencies: []
 review:
-  last-run: 2026-06-28T22:10:41Z
-  reviewed-against: da70a6b17249f0c67c424bfa64259b47b6d10cd4
+  last-run: 2026-06-28T23:18:34Z
+  reviewed-against: f8fa684e4a6fb73f697e6b1a2c7798ffafaa2693
   must-violations: 0
   should-violations: 0
-  low-confidence: 1
+  low-confidence: 0
   blocking: false
 ---
 
