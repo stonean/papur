@@ -247,4 +247,29 @@ mod tests {
         assert_eq!(css.start_col, 1);
         assert_eq!(&src[css.start_byte..css.start_byte + 3], ":::");
     }
+
+    #[test]
+    fn strict_unterminated_fence_is_p001() {
+        let src = "# Intro\n\n::: css\n.a\n  color: red\n"; // no closing :::
+        let err = segment(src, ParseMode::Strict).unwrap_err();
+        assert_eq!(err.len(), 1);
+        assert_eq!(err[0].code.code(), "PAPUR-P001");
+        assert_eq!(err[0].span.start_line, 3);
+    }
+
+    #[test]
+    fn lenient_unterminated_fence_degrades_to_content() {
+        let src = "# Intro\n\n::: css\n.a\n  color: red\n";
+        let stream = segment(src, ParseMode::Lenient).unwrap();
+        assert_eq!(kinds(&stream.blocks), ["content"]);
+        match &stream.blocks[0] {
+            Block::Content { text, .. } => assert!(text.contains("::: css")),
+            other => panic!("expected content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn default_mode_is_strict() {
+        assert_eq!(ParseMode::default(), ParseMode::Strict);
+    }
 }

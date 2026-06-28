@@ -26,10 +26,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 4. Implement strict / lenient mode
 
-- [ ] Strict: unterminated reserved fence → `PAPUR-P001`
-- [ ] Lenient: the same inputs degrade to `Content` prose with no error (AC3)
-- [ ] `ParseMode` defaults to Strict
-- [ ] Done when both modes are covered by tests
+- [x] Strict: unterminated reserved fence → `PAPUR-P001`
+- [x] Lenient: the same inputs degrade to `Content` prose with no error (AC3)
+- [x] `ParseMode` defaults to Strict
+- [x] Done when both modes are covered by tests
 
 ## 5. Implement frontmatter → meta normalization
 
