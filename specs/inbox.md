@@ -15,4 +15,4 @@ Items are migrated to their proper home as specs are written.
      Manual entries can use the simpler form below. When an item is migrated, remove it from
      this list. -->
 
-- [ ] {Brief description of the issue and any relevant context}
+- [ ] **Rust CI: dependency scanning + SBOM + provenance** (BE-DEPS-001 / 003 / 004) — wire `cargo audit` (or `cargo deny`) for advisories, SBOM generation (CycloneDX/SPDX), and crate provenance verification into CI for the Rust workspace. Surfaced by 001's review as a project-infra advisory; a chore with no feature-spec home — fold into the first CI / `system.md` spec, then remove this entry.

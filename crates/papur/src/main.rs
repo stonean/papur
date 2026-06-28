@@ -7,6 +7,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Parser;
 use miette::{Diagnostic, IntoDiagnostic, NamedSource, Result, SourceSpan};
@@ -48,7 +49,7 @@ struct ParseDiagnostic {
     code: &'static str,
     message: String,
     #[source_code]
-    src: NamedSource<String>,
+    src: NamedSource<Arc<str>>,
     #[label("here")]
     at: SourceSpan,
 }
@@ -86,12 +87,15 @@ fn main() -> Result<()> {
             Ok(())
         }
         Err(diags) => {
+            // Share one allocation of the source across all diagnostics rather
+            // than cloning the full string per finding.
+            let shared: Arc<str> = Arc::from(source);
             let diagnostics = diags
                 .into_iter()
                 .map(|d| ParseDiagnostic {
                     code: d.code.code(),
                     message: d.message,
-                    src: NamedSource::new(name.as_str(), source.clone()),
+                    src: NamedSource::new(name.as_str(), Arc::clone(&shared)),
                     at: (d.span.start_byte, d.span.len()).into(),
                 })
                 .collect();
