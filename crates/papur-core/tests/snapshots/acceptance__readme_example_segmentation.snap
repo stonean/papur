@@ -1,0 +1,26 @@
+---
+source: crates/papur-core/tests/acceptance.rs
+expression: projection
+---
+[
+    (
+        "meta",
+        "title: Welcome\nlang: en",
+    ),
+    (
+        "content",
+        "\n# Build documents that look designed {.headline}\n\nA markup language for people who like Markdown but love CSS. {.lead}\n\n[Get started]{.btn .primary}(/start) [Read the docs]{.btn .ghost}(/docs)\n\n## Features {#features}\n\n::: grid cols=3\n### Fast {.card}\nCompiles to clean HTML + CSS. No runtime.\n\n### Familiar {.card}\nIf you know Markdown, you already know 80% of it.\n\n### Themeable {.card}\nSwap a stylesheet, change the entire feel.\n:::\n\n",
+    ),
+    (
+        "theme",
+        "brand: oklch(60% 0.2 250)\nink: #1a1a1a\npaper: #fafafa",
+    ),
+    (
+        "css",
+        ".headline\n  font-size: clamp(2rem, 5vw, 4.5rem)\n\n.btn\n  padding: $space.sm $space.md",
+    ),
+    (
+        "script",
+        ".btn.primary\n  on click\n    track('cta-click')",
+    ),
+]

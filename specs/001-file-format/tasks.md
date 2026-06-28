@@ -59,9 +59,9 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 9. Acceptance-criteria test suite
 
-- [ ] One test per acceptance criterion (all 8), including the prose-only file (AC5), empty blocks, css/script source order, and theme/meta last-wins
-- [ ] Snapshot tests (`insta`) for representative fixtures, including the README example file
-- [ ] Done when all 8 acceptance criteria are covered and `cargo test` is green
+- [x] One test per acceptance criterion (all 8), including the prose-only file (AC5), empty blocks, css/script source order, and theme/meta last-wins
+- [x] Snapshot tests (`insta`) for representative fixtures, including the README example file
+- [x] Done when all 8 acceptance criteria are covered and `cargo test` is green
 
 ## 10. Validation gate
 
