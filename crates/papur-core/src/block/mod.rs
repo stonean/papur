@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use crate::diagnostic::Diagnostic;
 use crate::span::Span;
 
+mod merge;
 mod scanner;
 
 /// A YAML value, as parsed from `::: meta` / `::: theme` blocks and frontmatter.

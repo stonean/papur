@@ -40,9 +40,9 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 6. Implement the merge accessors
 
-- [ ] `merged_meta()` / `merged_theme()` fold all matching blocks left to right, later keys win; empty blocks contribute nothing
-- [ ] `css_blocks()` / `script_blocks()` preserve document (source) order
-- [ ] Done when merge and ordering match the multiple-block acceptance criteria
+- [x] `merged_meta()` / `merged_theme()` fold all matching blocks left to right, later keys win; empty blocks contribute nothing
+- [x] `css_blocks()` / `script_blocks()` preserve document (source) order
+- [x] Done when merge and ordering match the multiple-block acceptance criteria
 
 ## 7. Wire the CLI
 
