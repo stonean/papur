@@ -10,25 +10,31 @@ See [constitution.md](constitution.md) — guiding principles, development pipel
 
 ## Tech Stack
 
-<!-- Define your project's tech stack here. Example:
+papur is a CLI compiler shipped as a **single self-contained binary** — end
+users install nothing else (no Node, no interpreter, no runtime).
 
 | Layer | Technology | Role |
 | --- | --- | --- |
-| **Language** | Go v1.26.0 | Application logic |
-| **Database** | PostgreSQL v18 | Primary data store |
+| **Language** | Rust 1.95+ | Compiler implementation |
+| **CLI** | `clap` | Argument parsing |
+| **Diagnostics** | `miette` + `thiserror` | Source-highlighted compiler errors |
+| **Markdown** | `markdown-rs` | CommonMark → mdast (downstream specs) |
+| **CSS** | `lightningcss` | `::: css` layer parse/transform (downstream specs) |
+| **Tests** | `cargo test` + `insta` | Unit + snapshot tests |
 
--->
+Workspace layout: `crates/papur-core` (library — parser, blocks, AST, emitters)
+and `crates/papur-cli` (the `papur` binary). `markdown-rs` and `lightningcss`
+are recorded project-level choices, wired in by the specs that use them.
 
 ## Commands
 
-<!-- Define your project's common commands. Example:
-
-- Dev: `make dev`
-- Build: `make build`
-- Test: `make test`
-- Lint: `make lint`
-
--->
+- Build: `cargo build`
+- Build (release): `cargo build --release`
+- Run: `cargo run -p papur-cli -- <file.papur>`
+- Test: `cargo test`
+- Lint: `cargo clippy --all-targets -- -D warnings`
+- Format: `cargo fmt`
+- Markdown lint: `npx markdownlint-cli2`
 
 ## Project Structure
 

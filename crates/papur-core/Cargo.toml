@@ -1,0 +1,9 @@
+[package]
+name = "papur-core"
+description = "Core library for the papur markup compiler: parsing, blocks, AST, and target emitters."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
