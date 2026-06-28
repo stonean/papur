@@ -204,7 +204,7 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
 
 #[cfg(test)]
 mod tests {
-    use crate::block::{segment, Block, LayerKind, ParseMode};
+    use crate::block::{Block, LayerKind, ParseMode, segment};
 
     fn kinds(blocks: &[Block]) -> Vec<&'static str> {
         blocks
@@ -220,7 +220,10 @@ mod tests {
     fn segments_mixed_content_in_order() {
         let src = "::: meta\ntitle: x\n:::\n\n# Heading\n\n::: css\n.a\n  color: red\n:::\n\nBody text.\n\n::: script\n.a\n  on click\n:::\n";
         let stream = segment(src, ParseMode::Strict).unwrap();
-        assert_eq!(kinds(&stream.blocks), ["meta", "content", "css", "content", "script"]);
+        assert_eq!(
+            kinds(&stream.blocks),
+            ["meta", "content", "css", "content", "script"]
+        );
         match &stream.blocks[0] {
             Block::Layer { kind, body, .. } => {
                 assert_eq!(*kind, LayerKind::Meta);

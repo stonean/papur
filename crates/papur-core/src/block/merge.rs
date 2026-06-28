@@ -74,7 +74,7 @@ impl BlockStream {
 
 #[cfg(test)]
 mod tests {
-    use crate::block::{segment, ParseMode};
+    use crate::block::{ParseMode, segment};
 
     #[test]
     fn merged_meta_later_keys_win() {

@@ -10,6 +10,6 @@ pub mod block;
 pub mod diagnostic;
 pub mod span;
 
-pub use block::{segment, Block, BlockStream, KeyMap, LayerKind, ParseMode, YamlValue};
+pub use block::{Block, BlockStream, KeyMap, LayerKind, ParseMode, YamlValue, segment};
 pub use diagnostic::{Diagnostic, DiagnosticCode};
 pub use span::Span;

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use miette::{Diagnostic, IntoDiagnostic, NamedSource, Result, SourceSpan};
-use papur_core::{segment, Block, ParseMode};
+use papur_core::{Block, ParseMode, segment};
 use thiserror::Error;
 
 /// Compile a `.papur` source file.

@@ -5,7 +5,7 @@
 //! inert) are extension-layer concerns, verified by the `papur` binary's unit
 //! tests (`has_papur_extension`).
 
-use papur_core::{segment, Block, ParseMode};
+use papur_core::{Block, ParseMode, segment};
 
 /// AC3 — typed content outside a fence: a strict-mode error, lenient prose.
 #[test]
@@ -41,16 +41,29 @@ fn ac6_ordered_layers_keep_source_order() {
     let css = segment("::: css\nA\n:::\n\n::: css\nB\n:::\n", ParseMode::Strict).unwrap();
     assert_eq!(css.css_blocks().collect::<Vec<_>>(), ["A", "B"]);
 
-    let script =
-        segment("::: script\nfirst\n:::\n\n::: script\nsecond\n:::\n", ParseMode::Strict).unwrap();
-    assert_eq!(script.script_blocks().collect::<Vec<_>>(), ["first", "second"]);
+    let script = segment(
+        "::: script\nfirst\n:::\n\n::: script\nsecond\n:::\n",
+        ParseMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(
+        script.script_blocks().collect::<Vec<_>>(),
+        ["first", "second"]
+    );
 }
 
 /// AC7 — multiple `::: meta` / `::: theme` blocks merge key-by-key, later wins.
 #[test]
 fn ac7_keyvalue_layers_last_wins() {
-    let meta = segment("::: meta\nk: 1\n:::\n\n::: meta\nk: 2\n:::\n", ParseMode::Strict).unwrap();
-    assert_eq!(meta.merged_meta().get("k").and_then(|v| v.as_i64()), Some(2));
+    let meta = segment(
+        "::: meta\nk: 1\n:::\n\n::: meta\nk: 2\n:::\n",
+        ParseMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(
+        meta.merged_meta().get("k").and_then(|v| v.as_i64()),
+        Some(2)
+    );
 
     let theme = segment(
         "::: theme\nbrand: red\n:::\n\n::: theme\nbrand: blue\n:::\n",

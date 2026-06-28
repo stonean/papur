@@ -65,6 +65,6 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 10. Validation gate
 
-- [ ] `cargo test`, `cargo clippy`, and `cargo fmt --check` are clean
-- [ ] `npx markdownlint-cli2` is clean on `specs/001-file-format`
-- [ ] Done when every check above passes
+- [x] `cargo test`, `cargo clippy`, and `cargo fmt --check` are clean
+- [x] `npx markdownlint-cli2` is clean on `specs/001-file-format`
+- [x] Done when every check above passes
