@@ -103,14 +103,14 @@ These are recommendations for humans, not parser rules — ordering never change
 
 ## Acceptance Criteria
 
-- [ ] Parser accepts files only when the extension is exactly `.papur`.
-- [ ] Filename middle segments (`.css.papur`, `.js.papur`, `.theme.papur`) do not change parser behavior — every file is parsed identically.
-- [ ] Typed content outside of a fence is a parse error in strict mode; in lenient mode it is parsed as content prose.
-- [ ] `---` YAML frontmatter at the top of a file is treated as an implicit `::: meta` block.
+- [x] Parser accepts files only when the extension is exactly `.papur`.
+- [x] Filename middle segments (`.css.papur`, `.js.papur`, `.theme.papur`) do not change parser behavior — every file is parsed identically.
+- [x] Typed content outside of a fence is a parse error in strict mode; in lenient mode it is parsed as content prose.
+- [x] `---` YAML frontmatter at the top of a file is treated as an implicit `::: meta` block.
 - [ ] A file containing only prose (no fences, no frontmatter) parses successfully and emits content for every target.
 - [ ] Multiple `::: css` or `::: script` blocks are accepted and concatenated in document (source) order, preserving that order in the compiled output.
-- [ ] Multiple `::: theme` or `::: meta` blocks are accepted and merged key by key, with later keys winning.
-- [ ] An empty block of any type parses successfully and contributes nothing to the output.
+- [x] Multiple `::: theme` or `::: meta` blocks are accepted and merged key by key, with later keys winning.
+- [x] An empty block of any type parses successfully and contributes nothing to the output.
 
 ## Open Questions
 
