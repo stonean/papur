@@ -68,3 +68,9 @@ Tasks derived from the [plan](plan.md). Complete in order.
 - [x] `cargo test`, `cargo clippy`, and `cargo fmt --check` are clean
 - [x] `npx markdownlint-cli2` is clean on `specs/001-file-format`
 - [x] Done when every check above passes
+
+## 11. CRLF line endings normalize to LF in layer/frontmatter bodies
+
+- [ ] Implement the behavior described in `scenarios/crlf-line-endings.md`
+
+- **Done when**: a CRLF-encoded source and its LF equivalent produce identical layer block bodies and identical merged meta/theme, covered by a test.
