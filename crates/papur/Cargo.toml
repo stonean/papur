@@ -1,0 +1,13 @@
+[package]
+name = "papur"
+description = "The papur markup compiler (command-line interface)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+papur-core = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"

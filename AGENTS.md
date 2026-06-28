@@ -23,14 +23,14 @@ users install nothing else (no Node, no interpreter, no runtime).
 | **Tests** | `cargo test` + `insta` | Unit + snapshot tests |
 
 Workspace layout: `crates/papur-core` (library — parser, blocks, AST, emitters)
-and `crates/papur-cli` (the `papur` binary). `markdown-rs` and `lightningcss`
+and `crates/papur` (the `papur` binary). `markdown-rs` and `lightningcss`
 are recorded project-level choices, wired in by the specs that use them.
 
 ## Commands
 
 - Build: `cargo build`
 - Build (release): `cargo build --release`
-- Run: `cargo run -p papur-cli -- <file.papur>`
+- Run: `cargo run -p papur -- <file.papur>`
 - Test: `cargo test`
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Format: `cargo fmt`

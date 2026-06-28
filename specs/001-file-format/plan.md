@@ -45,7 +45,7 @@ crates/papur-core/              # library: parser, blocks, AST (later), emitters
   src/block/frontmatter.rs      # YAML frontmatter -> meta
   src/block/merge.rs            # merged_meta / merged_theme
   src/diagnostic.rs             # Diagnostic, DiagnosticCode
-crates/papur-cli/               # thin binary: arg parsing, file load, extension guard
+crates/papur/                   # binary (package: papur): arg parsing, file load, extension guard
   src/main.rs
 ```
 
@@ -136,7 +136,7 @@ Apache-2.0 before adding, and record any Apache-2.0 `NOTICE` in
 
 | File | Action | Purpose |
 | --- | --- | --- |
-| `Cargo.toml` | Create | Workspace manifest (members: `papur-core`, `papur-cli`) |
+| `Cargo.toml` | Create | Workspace manifest (members: `papur-core`, `papur`) |
 | `crates/papur-core/Cargo.toml` | Create | Core library manifest + deps |
 | `crates/papur-core/src/lib.rs` | Create | Core crate root and re-exports |
 | `crates/papur-core/src/block/mod.rs` | Create | `BlockStream`, `Block`, `ParseMode`, `segment()` |
@@ -144,8 +144,8 @@ Apache-2.0 before adding, and record any Apache-2.0 `NOTICE` in
 | `crates/papur-core/src/block/frontmatter.rs` | Create | YAML frontmatter → meta normalization |
 | `crates/papur-core/src/block/merge.rs` | Create | `merged_meta` / `merged_theme`, ordered accessors |
 | `crates/papur-core/src/diagnostic.rs` | Create | `Diagnostic`, `DiagnosticCode`, `PAPUR-P` codes |
-| `crates/papur-cli/Cargo.toml` | Create | CLI binary manifest |
-| `crates/papur-cli/src/main.rs` | Create | `clap` CLI, extension guard, `--lenient`, diagnostic rendering |
+| `crates/papur/Cargo.toml` | Create | Binary crate manifest (package `papur`) |
+| `crates/papur/src/main.rs` | Create | `clap` CLI, extension guard, `--lenient`, diagnostic rendering |
 | `crates/papur-core/tests/segmentation.rs` | Create | Acceptance-criteria + snapshot tests |
 | `AGENTS.md` | Modify | Fill Tech Stack and Commands sections |
 | `specs/errors.md` | Modify | Establish compiler-diagnostic convention + `PAPUR-P` registry |

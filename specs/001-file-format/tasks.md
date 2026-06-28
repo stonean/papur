@@ -4,18 +4,18 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 1. Scaffold the Rust workspace
 
-- [x] Create the workspace `Cargo.toml` with members `papur-core` and `papur-cli`
-- [x] Create `crates/papur-core` (lib) and `crates/papur-cli` (bin) with minimal `lib.rs` / `main.rs` that build
+- [x] Create the workspace `Cargo.toml` with members `papur-core` and `papur`
+- [x] Create `crates/papur-core` (lib) and `crates/papur` (bin) with minimal `lib.rs` / `main.rs` that build
 - [x] Add `/target` to `.gitignore`
 - [x] Record the stack (Rust, single binary) plus build/test/run commands in `AGENTS.md` (Tech Stack, Commands)
 - [x] Done when `cargo build` succeeds on the empty workspace
 
 ## 2. Define the block-segmentation data model
 
-- [ ] Add `Span`, `ParseMode`, `LayerKind`, `Block`, `BlockStream` in `papur-core` per [data-model.md](data-model.md)
-- [ ] Add `Diagnostic` and `DiagnosticCode` per data-model.md
-- [ ] Add dependency crates (`clap`, YAML crate, `miette`, `thiserror`, `indexmap`; `insta` dev); verify each license is permissive (MIT/BSD/ISC/Apache-2.0) per Boundaries and record any Apache `NOTICE` in `THIRD_PARTY_NOTICES`
-- [ ] Done when the types compile and are constructible in a unit test
+- [x] Add `Span`, `ParseMode`, `LayerKind`, `Block`, `BlockStream` in `papur-core` per [data-model.md](data-model.md)
+- [x] Add `Diagnostic` and `DiagnosticCode` per data-model.md
+- [x] Add dependency crates (`clap`, YAML crate, `miette`, `thiserror`, `indexmap`; `insta` dev); verify each license is permissive (MIT/BSD/ISC/Apache-2.0) per Boundaries and record any Apache `NOTICE` in `THIRD_PARTY_NOTICES`
+- [x] Done when the types compile and are constructible in a unit test
 
 ## 3. Implement the line scanner
 
