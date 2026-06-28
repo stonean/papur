@@ -46,11 +46,11 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 7. Wire the CLI
 
-- [ ] `clap` binary accepting a file path and `--lenient`
-- [ ] Reject any path whose extension is not exactly `.papur` before segmentation (AC1)
-- [ ] Confirm filename middle segments do not change behavior (AC2)
-- [ ] Render diagnostics with `miette` (source-highlighted)
-- [ ] Done when the CLI segments a file and prints labeled diagnostics on error
+- [x] `clap` binary accepting a file path and `--lenient`
+- [x] Reject any path whose extension is not exactly `.papur` before segmentation (AC1)
+- [x] Confirm filename middle segments do not change behavior (AC2)
+- [x] Render diagnostics with `miette` (source-highlighted)
+- [x] Done when the CLI segments a file and prints labeled diagnostics on error
 
 ## 8. Establish compiler-diagnostic conventions in errors.md
 
