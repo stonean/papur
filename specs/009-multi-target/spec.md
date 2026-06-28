@@ -62,6 +62,8 @@ The compile target is supplied at compile time (CLI flag, build config, API para
 - [ ] A block qualified `::: @email` is emitted only when the compile target is email.
 - [ ] The `::: script` layer is silently omitted from pdf, email, and plain target output.
 - [ ] Adding a new target emitter does not require changes to the parser or the AST.
+- [ ] A prose-only source — a single content block per [001-file-format](../001-file-format/spec.md) — emits content for every target.
+- [ ] Multiple `::: css` or `::: script` blocks are emitted in document (source) order, preserving the order that [001-file-format](../001-file-format/spec.md) exposes.
 
 ## Open Questions
 

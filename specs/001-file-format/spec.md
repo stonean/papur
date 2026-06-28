@@ -107,8 +107,8 @@ These are recommendations for humans, not parser rules — ordering never change
 - [x] Filename middle segments (`.css.papur`, `.js.papur`, `.theme.papur`) do not change parser behavior — every file is parsed identically.
 - [x] Typed content outside of a fence is a parse error in strict mode; in lenient mode it is parsed as content prose.
 - [x] `---` YAML frontmatter at the top of a file is treated as an implicit `::: meta` block.
-- [ ] A file containing only prose (no fences, no frontmatter) parses successfully and emits content for every target.
-- [ ] Multiple `::: css` or `::: script` blocks are accepted and concatenated in document (source) order, preserving that order in the compiled output.
+- [x] A file containing only prose (no fences, no frontmatter) parses successfully into a single content block.
+- [x] Multiple `::: css` or `::: script` blocks are accepted and exposed in document (source) order.
 - [x] Multiple `::: theme` or `::: meta` blocks are accepted and merged key by key, with later keys winning.
 - [x] An empty block of any type parses successfully and contributes nothing to the output.
 
@@ -120,3 +120,7 @@ These are recommendations for humans, not parser rules — ordering never change
 
 - **Multiple blocks of same type** — Allowed. Co-location is a core benefit of a mixed-content format, so the parser does not error on repeated blocks; it merges them by block nature. Ordered blocks concatenate in document (source) order — `::: css` (the cascade is source-order sensitive) and `::: script` (definition/execution order matters). Key-value blocks merge with later keys winning — `::: theme` and `::: meta`, consistent with the frontmatter/`::: meta` merge rule already defined in the Frontmatter section. Document order is normative for the ordered blocks: a compiler that hoists CSS/JS into a target file must preserve the source order of the blocks. See the Multiple Blocks section.
 - **Block ordering convention** — Recommend prose-first with a metadata/theme preamble: `::: meta` (or `---` frontmatter) first, then `::: theme`, then content, with `::: css` / `::: script` co-located near the content they affect or grouped at the end. This is authoring style guidance only — it is not parser-enforced and ordering never changes parse behavior. Captured in the Authoring Conventions section.
+
+## See also
+
+- [009-multi-target](../009-multi-target/spec.md) — the emitter-output guarantees (a prose-only source emits content for every target; `::: css` / `::: script` source order is preserved in compiled output) live with the emitter dispatch layer. 001 only segments and *exposes* blocks in source order; it does not emit.
