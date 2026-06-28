@@ -5,6 +5,8 @@
 //! else — prose and non-reserved content fences (`::: grid`, `::: @web`) — is
 //! captured verbatim as [`Block::Content`]. Block bodies are not parsed here.
 
+use yaml_rust2::YamlLoader;
+
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::span::Span;
 
@@ -58,6 +60,11 @@ fn is_close(text: &str) -> bool {
     }
 }
 
+/// A frontmatter delimiter line: exactly `---` (trailing whitespace allowed).
+fn is_fence_dashes(text: &str) -> bool {
+    text.trim_end_matches([' ', '\t', '\r']) == "---"
+}
+
 /// Flush the pending content run `[start, end)` as a [`Block::Content`], unless
 /// it is empty or all-whitespace (separators between layer blocks are dropped).
 fn flush_content(
@@ -93,6 +100,45 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
     let mut pending: Option<(usize, u32)> = None;
 
     let mut i = 0usize;
+
+    // Leading YAML frontmatter (`---` … `---`) becomes an implicit `::: meta`
+    // block. A non-leading `---` is an ordinary Markdown thematic break, left to
+    // the content path.
+    if n > 0
+        && is_fence_dashes(lines[0].text)
+        && let Some(k) = (1..n).find(|&k| is_fence_dashes(lines[k].text))
+    {
+        let raw = &source[lines[1].start..lines[k].start];
+        let body = raw.strip_suffix('\n').unwrap_or(raw).to_string();
+        let span = Span {
+            start_line: 1,
+            start_col: 1,
+            start_byte: lines[0].start,
+            end_byte: lines[k].start + lines[k].text.len(),
+        };
+        match YamlLoader::load_from_str(&body) {
+            Ok(_) => {
+                blocks.push(Block::Layer {
+                    kind: LayerKind::Meta,
+                    body,
+                    span,
+                });
+                i = k + 1;
+            }
+            Err(_) => {
+                // strict: a hard error; lenient: leave the region to the content path
+                if matches!(mode, ParseMode::Strict) {
+                    diags.push(Diagnostic::new(
+                        DiagnosticCode::MalformedFrontmatter,
+                        "leading frontmatter is not valid YAML",
+                        span,
+                    ));
+                    i = k + 1;
+                }
+            }
+        }
+    }
+
     while i < n {
         let line = &lines[i];
 
@@ -271,5 +317,61 @@ mod tests {
     #[test]
     fn default_mode_is_strict() {
         assert_eq!(ParseMode::default(), ParseMode::Strict);
+    }
+
+    fn meta_body(blocks: &[Block]) -> Option<&str> {
+        blocks.iter().find_map(|b| match b {
+            Block::Layer {
+                kind: LayerKind::Meta,
+                body,
+                ..
+            } => Some(body.as_str()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn frontmatter_becomes_meta_block() {
+        let src = "---\ntitle: My Page\nlang: en\n---\n\n# Body\n";
+        let stream = segment(src, ParseMode::Strict).unwrap();
+        assert_eq!(kinds(&stream.blocks), ["meta", "content"]);
+        match &stream.blocks[0] {
+            Block::Layer { kind, body, span } => {
+                assert_eq!(*kind, LayerKind::Meta);
+                assert_eq!(body, "title: My Page\nlang: en");
+                assert_eq!(span.start_line, 1);
+            }
+            other => panic!("expected meta layer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn frontmatter_equals_explicit_meta_block() {
+        let fm = segment("---\ntitle: x\nlang: en\n---\n", ParseMode::Strict).unwrap();
+        let explicit = segment("::: meta\ntitle: x\nlang: en\n:::\n", ParseMode::Strict).unwrap();
+        assert_eq!(meta_body(&fm.blocks), meta_body(&explicit.blocks));
+        assert_eq!(meta_body(&fm.blocks), Some("title: x\nlang: en"));
+    }
+
+    #[test]
+    fn non_leading_dashes_are_content() {
+        let stream = segment("# Title\n\n---\n\nMore.\n", ParseMode::Strict).unwrap();
+        assert_eq!(kinds(&stream.blocks), ["content"]);
+        match &stream.blocks[0] {
+            Block::Content { text, .. } => assert!(text.contains("---")),
+            other => panic!("expected content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_frontmatter_is_p010_in_strict() {
+        let err = segment("---\nfoo: [1, 2\n---\n", ParseMode::Strict).unwrap_err();
+        assert!(err.iter().any(|d| d.code.code() == "PAPUR-P010"));
+    }
+
+    #[test]
+    fn malformed_frontmatter_degrades_in_lenient() {
+        let stream = segment("---\nfoo: [1, 2\n---\n", ParseMode::Lenient).unwrap();
+        assert!(meta_body(&stream.blocks).is_none());
     }
 }

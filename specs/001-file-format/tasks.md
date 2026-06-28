@@ -33,10 +33,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 5. Implement frontmatter → meta normalization
 
-- [ ] Detect a leading `---…---` block; parse YAML into an ordered `KeyMap`; emit it as an implicit top `::: meta` block (AC4)
-- [ ] Malformed frontmatter YAML → `PAPUR-P010`
-- [ ] A non-leading `---` stays `Content` (Markdown thematic break)
-- [ ] Done when frontmatter and an equivalent `::: meta` block produce identical merged meta
+- [x] Detect a leading `---…---` block; parse YAML into an ordered `KeyMap`; emit it as an implicit top `::: meta` block (AC4)
+- [x] Malformed frontmatter YAML → `PAPUR-P010`
+- [x] A non-leading `---` stays `Content` (Markdown thematic break)
+- [x] Done when frontmatter and an equivalent `::: meta` block produce identical merged meta
 
 ## 6. Implement the merge accessors
 
