@@ -4,7 +4,7 @@ last_applied = "session-file-consolidate"
 [project]
 name = "papur"
 description = "A markdown-flavored markup language that compiles to semantic, accessible HTML, CSS, and beyond."
-languages = ["Go"]
+languages = ["Rust"]
 
 # govern (host)
 [host]

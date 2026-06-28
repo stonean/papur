@@ -89,6 +89,8 @@ are recorded project-level choices, wired in by the specs that use them.
 
 ## Workflow
 
+- This project uses **trunk-based development**: commit directly to `main`. Do not create feature branches or open PRs for pipeline work — integrate small, frequent commits straight to the trunk. (Overrides the agent default of branching off the default branch.)
+
 <!-- Process rules — pre-action checks, required ordering, lookup steps. "Always do X
      before Y" style. Distinct from Boundaries (hard "never" limits) and Gotchas
      (technical/framework quirks).
