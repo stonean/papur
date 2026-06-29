@@ -15,6 +15,13 @@ use crate::block::{Block, BlockStream, ParseMode};
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::span::Span;
 
+/// The literal opening/closing content-fence marker.
+const FENCE_MARKER: &str = ":::";
+/// Byte length of [`FENCE_MARKER`].
+const FENCE_MARKER_LEN: usize = FENCE_MARKER.len();
+/// The maximum ATX heading level (`#` through `######`).
+const MAX_HEADING_LEVEL: usize = 6;
+
 /// The role/scope skeleton parsed from one content span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructureTree {
@@ -89,20 +96,21 @@ pub enum Node {
 pub fn parse_structure(text: &str, mode: ParseMode) -> (StructureTree, Vec<Diagnostic>) {
     let mut diags = Vec::new();
     let mut stack: Vec<Frame> = vec![Frame::root()];
+    let mut fence_count: u32 = 0;
     let mut prose = ProseBuffer::default();
 
     for line in lines_with_offsets(text) {
         let trimmed = line.text.trim_start();
-        if let Some(after_colons) = trimmed.strip_prefix(":::") {
+        if let Some(after_colons) = trimmed.strip_prefix(FENCE_MARKER) {
             flush_prose(&mut prose, &mut stack, mode, &mut diags);
             if after_colons.trim().is_empty() {
-                close_fence(&mut stack, &line, mode, &mut diags);
+                close_fence(&mut stack, &mut fence_count, &line, mode, &mut diags);
             } else {
-                open_fence(&mut stack, &line, mode, &mut diags);
+                open_fence(&mut stack, &mut fence_count, &line, mode, &mut diags);
             }
         } else if let Some(heading) = parse_heading(&line, mode, &mut diags) {
             flush_prose(&mut prose, &mut stack, mode, &mut diags);
-            handle_heading(&mut stack, heading);
+            handle_heading(&mut stack, fence_count, heading);
         } else {
             prose.push(&line);
         }
@@ -165,9 +173,12 @@ pub fn parse_document(stream: &BlockStream) -> (Document, Vec<Diagnostic>) {
     (Document { trees }, diags)
 }
 
-/// Collect every element id with its file-absolute span, walking the tree.
+/// Collect every element id with its file-absolute span, walking the tree in
+/// pre-order. Uses an explicit work stack rather than recursion so a
+/// pathologically deep document cannot overflow the call stack.
 fn collect_ids(nodes: &[Node], base: Span, out: &mut Vec<(String, Span)>) {
-    for node in nodes {
+    let mut work: Vec<&Node> = nodes.iter().rev().collect();
+    while let Some(node) = work.pop() {
         match node {
             Node::Heading {
                 attrs,
@@ -182,7 +193,7 @@ fn collect_ids(nodes: &[Node], base: Span, out: &mut Vec<(String, Span)>) {
                 ..
             } => {
                 push_id(attrs, *span, base, out);
-                collect_ids(children, base, out);
+                work.extend(children.iter().rev());
             }
             Node::InlineSpan { attrs, span, .. } => push_id(attrs, *span, base, out),
             Node::Prose { .. } => {}
@@ -304,22 +315,16 @@ fn current(stack: &mut [Frame]) -> &mut Vec<Node> {
         .children
 }
 
-/// The number of open fences on the stack — the current fence depth.
-fn fence_depth(stack: &[Frame]) -> u32 {
-    stack
-        .iter()
-        .filter(|f| matches!(f.kind, FrameKind::Fence(_)))
-        .count() as u32
-}
-
-/// Open a fenced div: parse its header and push a new frame.
+/// Open a fenced div: parse its header and push a new frame. `fence_count`
+/// tracks the current fence depth in O(1) and is bumped as the fence opens.
 fn open_fence(
     stack: &mut Vec<Frame>,
+    fence_count: &mut u32,
     line: &LineInfo,
     mode: ParseMode,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let depth = fence_depth(stack);
+    let depth = *fence_count;
     let (name, attrs) = parse_fence_header(line, mode, diags);
     stack.push(Frame {
         kind: FrameKind::Fence(OpenDiv {
@@ -330,6 +335,7 @@ fn open_fence(
         }),
         children: Vec::new(),
     });
+    *fence_count += 1;
 }
 
 /// Close the top fence — also closing any heading sections opened inside it
@@ -337,12 +343,12 @@ fn open_fence(
 /// dangling closer when no fence is open.
 fn close_fence(
     stack: &mut Vec<Frame>,
+    fence_count: &mut u32,
     line: &LineInfo,
     mode: ParseMode,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let has_open_fence = stack.iter().any(|f| matches!(f.kind, FrameKind::Fence(_)));
-    if has_open_fence {
+    if *fence_count > 0 {
         loop {
             let frame = stack.pop().expect("a fence is open");
             let is_fence = matches!(frame.kind, FrameKind::Fence(_));
@@ -350,6 +356,7 @@ fn close_fence(
                 current(stack).push(node);
             }
             if is_fence {
+                *fence_count -= 1;
                 break;
             }
         }
@@ -377,7 +384,7 @@ struct ParsedHeading {
 
 /// Apply the heading scope rule, then either open a section (post-text role) or
 /// emit a plain heading element (pre-text role or no role).
-fn handle_heading(stack: &mut Vec<Frame>, heading: ParsedHeading) {
+fn handle_heading(stack: &mut Vec<Frame>, fence_count: u32, heading: ParsedHeading) {
     // Close sections at the current fence depth whose level is equal or higher
     // (level number ≤). The loop stops at a shallower section (an ancestor) or
     // at a fence — never crossing into a different fence depth.
@@ -391,7 +398,7 @@ fn handle_heading(stack: &mut Vec<Frame>, heading: ParsedHeading) {
         }
     }
 
-    let depth = fence_depth(stack);
+    let depth = fence_count;
     if heading.post_text {
         stack.push(Frame {
             kind: FrameKind::Section(OpenHeading {
@@ -425,7 +432,7 @@ fn parse_heading(
     let trimmed = line.text.trim_start();
     let leading_ws = line.text.len() - trimmed.len();
     let hashes = trimmed.bytes().take_while(|b| *b == b'#').count();
-    if hashes == 0 || hashes > 6 {
+    if hashes == 0 || hashes > MAX_HEADING_LEVEL {
         return None;
     }
     let after = &trimmed[hashes..];
@@ -498,7 +505,7 @@ fn parse_fence_header(
     diags: &mut Vec<Diagnostic>,
 ) -> (String, Attributes) {
     let leading_ws = line.text.len() - line.text.trim_start().len();
-    let after_colons = &line.text[leading_ws + 3..];
+    let after_colons = &line.text[leading_ws + FENCE_MARKER_LEN..];
     let name_ws = after_colons.len() - after_colons.trim_start().len();
     let header = after_colons.trim_start();
     let name_end = header.find(char::is_whitespace).unwrap_or(header.len());
@@ -507,7 +514,7 @@ fn parse_fence_header(
     let attr_raw = &header[name_end..];
     let attr_ws = attr_raw.len() - attr_raw.trim_start().len();
     let attr_text = attr_raw.trim();
-    let col = leading_ws + 3 + name_ws + name_end + attr_ws;
+    let col = leading_ws + FENCE_MARKER_LEN + name_ws + name_end + attr_ws;
     let attrs = parse_group(
         attr_text,
         line.start_byte + col,
