@@ -45,13 +45,19 @@ Parse (`P`) ranges:
 | --- | --- |
 | `P001`–`P009` | Fence / block segmentation |
 | `P010`–`P019` | Frontmatter |
+| `P020`–`P029` | Attribute groups / roles |
 
 ## Registry
 
 | Code | Severity | Meaning | Introduced by |
 | --- | --- | --- | --- |
 | `PAPUR-P001` | error | A reserved layer fence was opened but never closed. | 001-file-format |
+| `PAPUR-P002` | error | An unbalanced or dangling `:::` content fence. | 002-attribute-syntax |
 | `PAPUR-P010` | error | Leading YAML frontmatter could not be parsed. | 001-file-format |
+| `PAPUR-P020` | error | The same `id` is used on more than one element in a file. | 002-attribute-syntax |
+| `PAPUR-P021` | error | More than one `#id` in a single attribute group. | 002-attribute-syntax |
+| `PAPUR-P022` | error | A malformed attribute token (e.g. `{=value}`). | 002-attribute-syntax |
+| `PAPUR-P023` | error | A forced namespace prefix (`g.`/`l.`) resolved to no definition. | 002-attribute-syntax |
 
 ## Strict vs lenient mode
 
@@ -62,9 +68,9 @@ content instead of erroring. The mode is a parse-time input; see
 [001-file-format](001-file-format/spec.md).
 
 Detecting an unbalanced or dangling `:::` *content* fence is not a 001 concern
-(block segmentation leaves content fences opaque); that diagnostic is owned by
-[002-attribute-syntax](002-attribute-syntax/spec.md), whose fenced-div parser
-tracks fence depth.
+(block segmentation leaves content fences opaque); that diagnostic
+(`PAPUR-P002`) is owned by [002-attribute-syntax](002-attribute-syntax/spec.md),
+whose fenced-div parser tracks fence depth.
 
 ## Exit codes
 
