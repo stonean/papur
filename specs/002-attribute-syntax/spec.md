@@ -124,19 +124,19 @@ Fenced divs and roled headings both open scopes; the heading scope rule above go
 
 ## Acceptance Criteria
 
-- [ ] `{.foo}` attaches `class="foo"` to the immediately preceding (or following) element per the position rule.
-- [ ] `{#id}` attaches `id="id"`; duplicate ids in the same file are a lint error.
-- [ ] `{key=value}` attaches `data-key="value"` for non-standard keys; recognized HTML attribute names (global or element-standard, per the WHATWG HTML standard) pass through verbatim.
-- [ ] Pre-text role on a heading attaches to the heading element only.
-- [ ] Post-text role on a heading opens a section scope; the scope closes per the heading scope rule.
-- [ ] Nested fenced divs produce nested elements; descendant CSS selectors written against parent.child match the emitted structure.
-- [ ] `g.foo` always resolves to a global role definition; `l.foo` always resolves to a local one; an unprefixed `.foo` resolves local-first then global.
-- [ ] An inner fence does not close an outer heading scope opened in the parent fence.
-- [ ] An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
-- [ ] An inline attribute group `[text]{.foo}` attaches to the bracketed span it follows and never opens a scope; only headings carry the pre-text/post-text section-scope distinction.
-- [ ] A forced namespace prefix that cannot be satisfied is a resolution error (strict: lint error; lenient: emit unresolved and warn); an unresolved unprefixed `.foo` is emitted verbatim and is not an error.
-- [ ] A fenced div applies its name as the primary class and any trailing `.class`/`#id`/`key=value` attributes to the same `<div>`.
-- [ ] Degenerate attribute groups behave per **Edge Cases**: `{}` is a no-op, `{#a #b}` is a lint error, `{=value}` is a strict-mode parse error and lenient-mode literal content.
+- [x] `{.foo}` attaches `class="foo"` to the immediately preceding (or following) element per the position rule.
+- [x] `{#id}` attaches `id="id"`; duplicate ids in the same file are a lint error.
+- [x] `{key=value}` attaches `data-key="value"` for non-standard keys; recognized HTML attribute names (global or element-standard, per the WHATWG HTML standard) pass through verbatim.
+- [x] Pre-text role on a heading attaches to the heading element only.
+- [x] Post-text role on a heading opens a section scope; the scope closes per the heading scope rule.
+- [x] Nested fenced divs produce nested elements; descendant CSS selectors written against parent.child match the emitted structure.
+- [x] `g.foo` always resolves to a global role definition; `l.foo` always resolves to a local one; an unprefixed `.foo` resolves local-first then global.
+- [x] An inner fence does not close an outer heading scope opened in the parent fence.
+- [x] An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
+- [x] An inline attribute group `[text]{.foo}` attaches to the bracketed span it follows and never opens a scope; only headings carry the pre-text/post-text section-scope distinction.
+- [x] A forced namespace prefix that cannot be satisfied is a resolution error (strict: lint error; lenient: emit unresolved and warn); an unresolved unprefixed `.foo` is emitted verbatim and is not an error.
+- [x] A fenced div applies its name as the primary class and any trailing `.class`/`#id`/`key=value` attributes to the same `<div>`.
+- [x] Degenerate attribute groups behave per **Edge Cases**: `{}` is a no-op, `{#a #b}` is a lint error, `{=value}` is a strict-mode parse error and lenient-mode literal content.
 
 ## Edge Cases
 
