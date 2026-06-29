@@ -11,6 +11,7 @@ pub mod block;
 pub mod diagnostic;
 pub mod role;
 pub mod span;
+pub mod structure;
 
 pub use block::{Block, BlockStream, KeyMap, LayerKind, ParseMode, YamlValue, segment};
 pub use diagnostic::{Diagnostic, DiagnosticCode};

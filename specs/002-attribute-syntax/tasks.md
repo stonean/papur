@@ -28,10 +28,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 5. Fenced-div depth scan + dangling-fence diagnostic (`structure` module)
 
-- [ ] Create `crates/papur-core/src/structure/mod.rs` with the stack-based `:::` scanner: `::: name [attrs]` opens, bare `:::` closes, depth recorded per node.
-- [ ] Build `FencedDiv` nodes (name → primary class, trailing attrs on the same element) and nest inner fences as children.
-- [ ] Emit `P002` on an unbalanced/dangling marker (strict error; lenient literal content).
-- [ ] **Done when:** tests cover balanced nesting, trailing-attribute application, and dangling/unbalanced markers in both modes.
+- [x] Create `crates/papur-core/src/structure/mod.rs` with the stack-based `:::` scanner: `::: name [attrs]` opens, bare `:::` closes, depth recorded per node.
+- [x] Build `FencedDiv` nodes (name → primary class, trailing attrs on the same element) and nest inner fences as children.
+- [x] Emit `P002` on an unbalanced/dangling marker (strict error; lenient literal content).
+- [x] **Done when:** tests cover balanced nesting, trailing-attribute application, and dangling/unbalanced markers in both modes.
 
 ## 6. Headings, inline spans, position + heading-scope rules (`structure` module)
 
