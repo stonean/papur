@@ -266,7 +266,7 @@ Every rule has four required fields:
 - **Rationale** — the threat or risk the rule mitigates.
 - **Verification** — instruction to the validate agent on how to check compliance against feature artifacts.
 
-The full schema, ID stability invariants, category abbreviations, and Verification phrasing rules are canonically declared in `specs/008-security-rules/data-model.md`. New rule files follow the same schema.
+The full schema, ID-stability invariants, the ID grammar (including the `[A-Z][A-Z0-9]*` category-abbreviation format), and Verification phrasing rules are canonically declared in `specs/008-security-rules/data-model.md` — and, for configuration rules, in `specs/017-derive-dont-ask/data-model.md`. The specific category abbreviations a given rule file uses are declared in that file's own header (e.g., `api-backend.md` declares `SCHEMA`/`APIVER`/…). New rule files follow the same schema.
 
 #### When to write a rule
 
@@ -305,7 +305,7 @@ A project may exclude a stack-selected rule file from `/papur:review` by listing
 
 - Rule IDs are permanent. Once assigned, an ID is never renumbered, even if the rule moves within the file or is edited.
 - Rules are deprecated with a `**DEPRECATED in {version}:**` label and a removal target version, then removed only after the deprecation window has passed.
-- New rule files are introduced via their own feature spec (the same way 008 introduced `security-backend.md` and `security-frontend.md`).
+- New rule files are introduced via their own feature spec (the same way 008 introduced `security-backend.md` and `security-frontend.md`). **Recorded exception (backfill):** `api-backend.md`, `accessibility-frontend.md`, and `performance-frontend.md` were introduced in commit `9ccbd0b` bundled into specs 024/025 rather than through their own introducing specs. They are in active use — discovered by the suffix directory-walk and cited by ID like every other rule file — and their ID grammar is reconciled with this section, so they are retained as-is; no retroactive introducing specs are required.
 
 See `specs/008-security-rules/data-model.md` for the full ID-stability invariants and deprecation rules.
 

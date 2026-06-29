@@ -28,7 +28,7 @@ advances to `done`.
   plus any files modified since the spec advanced to `in-progress` (whichever
   set is larger). `specs/inbox.md` is also read (diffed against `diff-base`) to
   surface issues captured during the work window — see §Behavior step 4.
-- **Config** — two `.govern.toml` keys influence this command:
+- **Config** — three `.govern.toml` keys influence this command:
   - `[review] tech-stack-verified` (boolean, default `false`): when
     `true`, the tech-stack alignment check (see Behavior step 1) is
     skipped on every run until the operator clears the key. Set
@@ -43,6 +43,15 @@ advances to `done`.
     rule-file selection regardless of stack detection. Consulted in
     Behavior step 5. Reason is mandatory — it is the audit trail for
     the override.
+  - `[rules] surfaces` (array of strings, default unset): the project's
+    rule surfaces, members in `{"backend", "frontend"}` (full-stack lists
+    both; `*-cross.md` files are unconditional and not members). When set,
+    it is the source of truth for surface selection in Behavior step 5 and
+    replaces stack detection; when unset, step 5 falls back to the detected
+    stack. The **empty list** (`[]`) is valid and means cross-only (not
+    the same as unset); an unrecognized member (including `"cross"`) or a
+    non-list value fails fast in Behavior step 5. Collected and persisted
+    by `/govern` (`govern.md` §Collect Project Inputs).
 
 ## Flags
 
@@ -111,16 +120,43 @@ For each targeted feature, in order:
      rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md
      ```
 
-   Filter the recognized set by the detected stack from step 4 (keep the
-   matching surface, keep every `*-cross.md`); keep every unrecognized
-   file unconditionally.
+   Determine the **surface selection** for this run. Read `.govern.toml`
+   `[rules] surfaces` (see [Inputs](#inputs)):
+
+   - **Set to a valid list** (every member in `{backend, frontend}`) —
+     keep the rule files whose surface is listed in `surfaces`, plus
+     every `*-cross.md`. This explicit operator-set selection _replaces_
+     the detected-stack filter; the stack from step 4 is not consulted
+     for rule-file selection. The **empty list** (`surfaces = []`) is a
+     valid value of this case and means **cross-only**: no
+     `*-backend.md`/`*-frontend.md` file is kept, only `*-cross.md`. The
+     empty list is distinct from the key being unset (below) — it is the
+     operator explicitly declaring "no surface rules, only cross-cutting
+     ones," not a request to derive.
+   - **Set to a degenerate value** — fail fast (do not silently ignore,
+     do not warn-and-continue), consistent with `CFG-ENV-003`'s
+     fail-fast-on-invalid-configuration posture:
+     - **Unrecognized member.** A member outside `{backend, frontend}` —
+       a typo like `"fullstack"`, or `"cross"` (cross-cutting files are
+       unconditional, not a selectable surface) — halts the run with
+       `/papur:review: invalid [rules] surfaces member "<value>" — accepted members are "backend" and "frontend" (use [] for cross-only; -cross.md files always apply)`.
+       A list mixing valid and invalid members (`["backend", "fullstack"]`)
+       fails on the invalid member; a valid member does not rescue it.
+     - **Type mismatch.** A non-list value (`surfaces = "backend"`, a
+       bare string) halts the run with
+       `/papur:review: [rules] surfaces must be a list of strings, got <type>`.
+   - **Unset** — fall back to the detected stack from step 4: keep the
+     matching surface, keep every `*-cross.md` (pre-033 behavior).
+
+   In every non-error case, keep every unrecognized-suffix file
+   unconditionally.
 
    Then apply the **disabled-rule-files filter**. Read `.govern.toml`
    `[[review.disabled-rule-files]]` (see [Inputs](#inputs)). For each
    entry, in list order:
 
-   - **Drop + notice (stack-selected match).** `file` matches the
-     basename of a file currently in the post-stack-filter set. Remove
+   - **Drop + notice (selected match).** `file` matches the
+     basename of a file currently in the post-selection set. Remove
      it from the set and emit one line:
 
      ```text
@@ -131,9 +167,9 @@ For each targeted feature, in order:
      TOML multi-line strings) to single spaces before emitting — the
      notice is single-line by contract.
 
-   - **No-op notice (non-stack-selected match).** `file` matches a
+   - **No-op notice (non-selected match).** `file` matches a
      basename in the rule-file directory but the file was NOT in the
-     post-stack-filter set (different surface). Emit one line and
+     post-selection set (different surface). Emit one line and
      change nothing:
 
      ```text

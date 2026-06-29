@@ -6,6 +6,9 @@ name = "papur"
 description = "A markdown-flavored markup language that compiles to semantic, accessible HTML, CSS, and beyond."
 languages = ["Rust"]
 
+[rules]
+surfaces = ["backend"]
+
 # govern (host)
 [host]
 project = "papur"
