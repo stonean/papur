@@ -64,6 +64,127 @@ impl Attributes {
     }
 }
 
+/// How a `key=value` pair is emitted by the target layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttrKind {
+    /// `key` is a recognized HTML attribute name — emitted verbatim.
+    Verbatim,
+    /// Any other key — emitted as `data-{key}`.
+    Data,
+}
+
+/// The curated allowlist of HTML attribute names emitted verbatim: the WHATWG
+/// global attributes plus the common element-standard attributes authors attach
+/// inline. This is the single source of truth for the verbatim/`data-` boundary
+/// — the emitter trusts [`classify_attr`] rather than re-deriving it. Keys
+/// outside the list, including element-specific layout keys like `cols`, are
+/// namespaced under `data-`, matching the `::: grid cols=3` → `data-cols`
+/// example in the spec. `data-*` and `aria-*` keys are recognized by prefix.
+const HTML_ATTRIBUTES: &[&str] = &[
+    // WHATWG global attributes.
+    "accesskey",
+    "autocapitalize",
+    "autofocus",
+    "class",
+    "contenteditable",
+    "dir",
+    "draggable",
+    "enterkeyhint",
+    "hidden",
+    "id",
+    "inert",
+    "inputmode",
+    "is",
+    "itemid",
+    "itemprop",
+    "itemref",
+    "itemscope",
+    "itemtype",
+    "lang",
+    "nonce",
+    "part",
+    "popover",
+    "role",
+    "slot",
+    "spellcheck",
+    "style",
+    "tabindex",
+    "title",
+    "translate",
+    // Common element-standard attributes attached inline.
+    "accept",
+    "action",
+    "alt",
+    "async",
+    "autocomplete",
+    "autoplay",
+    "charset",
+    "checked",
+    "cite",
+    "content",
+    "controls",
+    "crossorigin",
+    "datetime",
+    "decoding",
+    "defer",
+    "disabled",
+    "download",
+    "enctype",
+    "for",
+    "form",
+    "height",
+    "href",
+    "hreflang",
+    "integrity",
+    "label",
+    "list",
+    "loading",
+    "loop",
+    "max",
+    "maxlength",
+    "media",
+    "method",
+    "min",
+    "minlength",
+    "multiple",
+    "muted",
+    "name",
+    "open",
+    "pattern",
+    "ping",
+    "placeholder",
+    "poster",
+    "preload",
+    "readonly",
+    "referrerpolicy",
+    "rel",
+    "required",
+    "selected",
+    "sizes",
+    "src",
+    "srcset",
+    "step",
+    "target",
+    "type",
+    "value",
+    "width",
+    "wrap",
+];
+
+/// Classify an attribute key as verbatim HTML or a `data-` attribute. Matching
+/// is case-insensitive; `data-*` and `aria-*` keys are always verbatim.
+pub fn classify_attr(key: &str) -> AttrKind {
+    let lower = key.to_ascii_lowercase();
+    if lower.starts_with("data-") || lower.starts_with("aria-") {
+        return AttrKind::Verbatim;
+    }
+    if HTML_ATTRIBUTES.contains(&lower.as_str()) {
+        AttrKind::Verbatim
+    } else {
+        AttrKind::Data
+    }
+}
+
 /// Parse the inner text of a brace group into [`Attributes`].
 ///
 /// In strict mode, problems are reported as diagnostics; in lenient mode they
@@ -351,5 +472,30 @@ mod tests {
         let (attrs, diags) = strict(r#"key="abc"#);
         assert!(attrs.attrs.is_empty());
         assert_eq!(codes(&diags), vec!["PAPUR-P022"]);
+    }
+
+    #[test]
+    fn recognized_html_attributes_are_verbatim() {
+        for key in ["id", "href", "lang", "class", "src", "title", "type"] {
+            assert_eq!(classify_attr(key), AttrKind::Verbatim, "{key}");
+        }
+    }
+
+    #[test]
+    fn data_and_aria_prefixes_are_verbatim() {
+        assert_eq!(classify_attr("data-x"), AttrKind::Verbatim);
+        assert_eq!(classify_attr("aria-label"), AttrKind::Verbatim);
+    }
+
+    #[test]
+    fn unknown_keys_are_data() {
+        for key in ["cols", "foo", "bar"] {
+            assert_eq!(classify_attr(key), AttrKind::Data, "{key}");
+        }
+    }
+
+    #[test]
+    fn classification_is_case_insensitive() {
+        assert_eq!(classify_attr("HREF"), AttrKind::Verbatim);
     }
 }

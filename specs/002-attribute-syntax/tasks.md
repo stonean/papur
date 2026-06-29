@@ -17,8 +17,8 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 3. Attribute classification (verbatim vs `data-`)
 
-- [ ] Add the curated `const` HTML-attribute allowlist (WHATWG global + common element-standard) and `classify_attr(key) -> AttrKind`.
-- [ ] **Done when:** a test asserts representative recognized keys (`id`, `href`, `lang`, …) classify `Verbatim` and arbitrary keys (`cols`, `foo`) classify `Data`.
+- [x] Add the curated `const` HTML-attribute allowlist (WHATWG global + common element-standard) and `classify_attr(key) -> AttrKind`.
+- [x] **Done when:** a test asserts representative recognized keys (`id`, `href`, `lang`, …) classify `Verbatim` and arbitrary keys (`cols`, `foo`) classify `Data`.
 
 ## 4. Role resolution (`role` module)
 
