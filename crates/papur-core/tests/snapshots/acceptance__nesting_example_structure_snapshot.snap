@@ -1,0 +1,122 @@
+---
+source: crates/papur-core/tests/acceptance.rs
+expression: tree
+---
+StructureTree {
+    nodes: [
+        FencedDiv {
+            name: "grid",
+            attrs: Attributes {
+                roles: [],
+                id: None,
+                attrs: {
+                    "cols": "3",
+                },
+            },
+            fence_depth: 0,
+            children: [
+                Heading {
+                    level: 3,
+                    text: "Fast",
+                    attrs: Attributes {
+                        roles: [
+                            RoleRef {
+                                namespace: Auto,
+                                name: "carda",
+                            },
+                        ],
+                        id: None,
+                        attrs: {},
+                    },
+                    opens_scope: true,
+                    fence_depth: 1,
+                    children: [
+                        Prose {
+                            text: "Content.\n",
+                            span: Span {
+                                start_line: 3,
+                                start_col: 1,
+                                start_byte: 34,
+                                end_byte: 43,
+                            },
+                        },
+                        FencedDiv {
+                            name: "grid",
+                            attrs: Attributes {
+                                roles: [],
+                                id: None,
+                                attrs: {
+                                    "cols": "2",
+                                },
+                            },
+                            fence_depth: 1,
+                            children: [
+                                Prose {
+                                    text: "  Still in .carda.\n",
+                                    span: Span {
+                                        start_line: 6,
+                                        start_col: 1,
+                                        start_byte: 62,
+                                        end_byte: 81,
+                                    },
+                                },
+                                Heading {
+                                    level: 4,
+                                    text: "Smaller",
+                                    attrs: Attributes {
+                                        roles: [
+                                            RoleRef {
+                                                namespace: Auto,
+                                                name: "card1",
+                                            },
+                                        ],
+                                        id: None,
+                                        attrs: {},
+                                    },
+                                    opens_scope: true,
+                                    fence_depth: 2,
+                                    children: [
+                                        Prose {
+                                            text: "  In .carda > .card1.",
+                                            span: Span {
+                                                start_line: 9,
+                                                start_col: 1,
+                                                start_byte: 106,
+                                                end_byte: 127,
+                                            },
+                                        },
+                                    ],
+                                    span: Span {
+                                        start_line: 8,
+                                        start_col: 1,
+                                        start_byte: 82,
+                                        end_byte: 105,
+                                    },
+                                },
+                            ],
+                            span: Span {
+                                start_line: 5,
+                                start_col: 1,
+                                start_byte: 44,
+                                end_byte: 61,
+                            },
+                        },
+                    ],
+                    span: Span {
+                        start_line: 2,
+                        start_col: 1,
+                        start_byte: 16,
+                        end_byte: 33,
+                    },
+                },
+            ],
+            span: Span {
+                start_line: 1,
+                start_col: 1,
+                start_byte: 0,
+                end_byte: 15,
+            },
+        },
+    ],
+    mode: Strict,
+}

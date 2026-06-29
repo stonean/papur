@@ -48,5 +48,5 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 8. Acceptance tests + gates
 
-- [ ] Add one test per acceptance criterion in `crates/papur-core/tests/acceptance.rs`, pinning structured output with `insta` snapshots.
-- [ ] **Done when:** every acceptance criterion has a passing test, `cargo test` is green, and `npx markdownlint-cli2` passes on the feature directory.
+- [x] Add one test per acceptance criterion in `crates/papur-core/tests/acceptance.rs`, pinning structured output with `insta` snapshots.
+- [x] **Done when:** every acceptance criterion has a passing test, `cargo test` is green, and `npx markdownlint-cli2` passes on the feature directory.
