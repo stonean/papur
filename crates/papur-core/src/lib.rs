@@ -9,6 +9,7 @@
 pub mod attr;
 pub mod block;
 pub mod diagnostic;
+pub mod role;
 pub mod span;
 
 pub use block::{Block, BlockStream, KeyMap, LayerKind, ParseMode, YamlValue, segment};

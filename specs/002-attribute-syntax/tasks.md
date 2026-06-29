@@ -22,9 +22,9 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 4. Role resolution (`role` module)
 
-- [ ] Create `crates/papur-core/src/role/mod.rs` with `Namespace`, the `RoleRegistry` trait, `Resolution`, and `resolve(role, registry, mode)`.
-- [ ] Implement `Auto` (local-first→global, unresolved emits verbatim with no diagnostic) and forced `Global`/`Local` (emit `P023` when unsatisfiable; lenient warns).
-- [ ] **Done when:** unit tests against an injected registry verify each branch, including unresolved-`Auto`-is-not-an-error and forced-miss-is-`P023`.
+- [x] Create `crates/papur-core/src/role/mod.rs` with `Namespace`, the `RoleRegistry` trait, `Resolution`, and `resolve(role, registry, mode)`.
+- [x] Implement `Auto` (local-first→global, unresolved emits verbatim with no diagnostic) and forced `Global`/`Local` (emit `P023` when unsatisfiable; lenient warns).
+- [x] **Done when:** unit tests against an injected registry verify each branch, including unresolved-`Auto`-is-not-an-error and forced-miss-is-`P023`.
 
 ## 5. Fenced-div depth scan + dangling-fence diagnostic (`structure` module)
 
