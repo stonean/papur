@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 dependencies: [001-file-format]
 review:
   last-run: 2026-06-29T02:42:39Z
