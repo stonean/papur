@@ -42,9 +42,9 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 7. File-scoped duplicate-id lint + public API
 
-- [ ] Add the whole-file duplicate-`id` pass over the assembled tree, emitting `P020`.
-- [ ] Wire the modules together behind the parse entry point and re-export the public types from `lib.rs`.
-- [ ] **Done when:** a multi-element fixture with a repeated id reports `P020`; `lib.rs` re-exports compile and are reachable from an integration test.
+- [x] Add the whole-file duplicate-`id` pass over the assembled tree, emitting `P020`.
+- [x] Wire the modules together behind the parse entry point and re-export the public types from `lib.rs`.
+- [x] **Done when:** a multi-element fixture with a repeated id reports `P020`; `lib.rs` re-exports compile and are reachable from an integration test.
 
 ## 8. Acceptance tests + gates
 

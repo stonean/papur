@@ -102,6 +102,22 @@ fn readme_example_segmentation() {
     insta::assert_debug_snapshot!(projection);
 }
 
+/// Spec 002 — the attribute-syntax parse entry points are re-exported from the
+/// crate root and reachable from a downstream crate.
+#[test]
+fn attribute_syntax_reexports_reachable() {
+    use papur_core::{AttrKind, Node, classify_attr, parse_document, parse_structure};
+
+    let (tree, diags) = parse_structure("::: hero #top\nhi\n:::", ParseMode::Strict);
+    assert!(diags.is_empty());
+    assert!(matches!(tree.nodes[0], Node::FencedDiv { .. }));
+    assert_eq!(classify_attr("href"), AttrKind::Verbatim);
+
+    let stream = segment("::: a #x\n:::\n::: b #x\n:::", ParseMode::Strict).unwrap();
+    let (_doc, doc_diags) = parse_document(&stream);
+    assert_eq!(doc_diags.len(), 1);
+}
+
 const README_EXAMPLE: &str = r#"::: meta
 title: Welcome
 lang: en

@@ -11,7 +11,7 @@
 //! downstream Markdown/AST pass.
 
 use crate::attr::{Attributes, parse_attributes};
-use crate::block::ParseMode;
+use crate::block::{Block, BlockStream, ParseMode};
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::span::Span;
 
@@ -131,6 +131,104 @@ pub fn parse_structure(text: &str, mode: ParseMode) -> (StructureTree, Vec<Diagn
         },
         diags,
     )
+}
+
+/// A parsed document: one [`StructureTree`] per content block, in source order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Document {
+    /// The structure trees, one per `Block::Content` span.
+    pub trees: Vec<StructureTree>,
+}
+
+/// Parse every content block of a segmented document into a structure tree and
+/// run the whole-file duplicate-`id` lint across them.
+///
+/// Per-block diagnostics are offset from content-relative spans into
+/// file-absolute spans using each content block's own span.
+pub fn parse_document(stream: &BlockStream) -> (Document, Vec<Diagnostic>) {
+    let mut trees = Vec::new();
+    let mut diags = Vec::new();
+    let mut ids: Vec<(String, Span)> = Vec::new();
+
+    for block in &stream.blocks {
+        if let Block::Content { text, span } = block {
+            let (tree, block_diags) = parse_structure(text, stream.mode);
+            for d in block_diags {
+                diags.push(offset_diagnostic(d, *span));
+            }
+            collect_ids(&tree.nodes, *span, &mut ids);
+            trees.push(tree);
+        }
+    }
+
+    check_duplicate_ids(&ids, stream.mode, &mut diags);
+    (Document { trees }, diags)
+}
+
+/// Collect every element id with its file-absolute span, walking the tree.
+fn collect_ids(nodes: &[Node], base: Span, out: &mut Vec<(String, Span)>) {
+    for node in nodes {
+        match node {
+            Node::Heading {
+                attrs,
+                span,
+                children,
+                ..
+            }
+            | Node::FencedDiv {
+                attrs,
+                span,
+                children,
+                ..
+            } => {
+                push_id(attrs, *span, base, out);
+                collect_ids(children, base, out);
+            }
+            Node::InlineSpan { attrs, span, .. } => push_id(attrs, *span, base, out),
+            Node::Prose { .. } => {}
+        }
+    }
+}
+
+/// Record a node's id (if any) at its file-absolute span.
+fn push_id(attrs: &Attributes, span: Span, base: Span, out: &mut Vec<(String, Span)>) {
+    if let Some(id) = &attrs.id {
+        out.push((id.clone(), offset_span(span, base)));
+    }
+}
+
+/// Emit `PAPUR-P020` for every id used more than once (strict mode only; lenient
+/// keeps both).
+fn check_duplicate_ids(ids: &[(String, Span)], mode: ParseMode, diags: &mut Vec<Diagnostic>) {
+    if mode != ParseMode::Strict {
+        return;
+    }
+    let mut seen = std::collections::HashSet::new();
+    for (id, span) in ids {
+        if !seen.insert(id.as_str()) {
+            diags.push(Diagnostic::new(
+                DiagnosticCode::DuplicateId,
+                format!("duplicate id `{id}`"),
+                *span,
+            ));
+        }
+    }
+}
+
+/// Offset a content-relative span into file-absolute coordinates using the
+/// content block's span.
+fn offset_span(span: Span, base: Span) -> Span {
+    Span {
+        start_line: base.start_line + span.start_line - 1,
+        start_col: span.start_col,
+        start_byte: base.start_byte + span.start_byte,
+        end_byte: base.start_byte + span.end_byte,
+    }
+}
+
+/// Offset a diagnostic's span into file-absolute coordinates.
+fn offset_diagnostic(d: Diagnostic, base: Span) -> Diagnostic {
+    Diagnostic::new(d.code, d.message, offset_span(d.span, base))
 }
 
 /// A node being assembled, with its accumulating children.
@@ -939,5 +1037,33 @@ mod tests {
         assert_eq!(cl, 4);
         assert_eq!(ct, "Smaller");
         assert_eq!(ca.roles[0].name, "card1");
+    }
+
+    // --- whole-file duplicate-id lint (task 7) ---
+
+    #[test]
+    fn duplicate_id_across_file_is_p020() {
+        let stream =
+            crate::block::segment("::: card #dup\n:::\n::: note #dup\n:::", ParseMode::Strict)
+                .expect("segments");
+        let (_, diags) = parse_document(&stream);
+        assert_eq!(codes(&diags), vec!["PAPUR-P020"]);
+    }
+
+    #[test]
+    fn distinct_ids_are_clean() {
+        let stream = crate::block::segment("::: card #a\n:::\n::: note #b\n:::", ParseMode::Strict)
+            .expect("segments");
+        let (_, diags) = parse_document(&stream);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn duplicate_id_lenient_is_silent() {
+        let stream =
+            crate::block::segment("::: card #dup\n:::\n::: note #dup\n:::", ParseMode::Lenient)
+                .expect("segments");
+        let (_, diags) = parse_document(&stream);
+        assert!(diags.is_empty());
     }
 }

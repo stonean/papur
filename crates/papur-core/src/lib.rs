@@ -13,6 +13,11 @@ pub mod role;
 pub mod span;
 pub mod structure;
 
+pub use attr::{
+    AttrKind, Attributes, KeyValues, Namespace, RoleRef, classify_attr, parse_attributes,
+};
 pub use block::{Block, BlockStream, KeyMap, LayerKind, ParseMode, YamlValue, segment};
 pub use diagnostic::{Diagnostic, DiagnosticCode};
+pub use role::{Resolution, RoleRegistry, Scope, resolve};
 pub use span::Span;
+pub use structure::{Document, Node, StructureTree, parse_document, parse_structure};
