@@ -2,10 +2,10 @@
 status: in-progress
 dependencies: [001-file-format]
 review:
-  last-run: null
-  reviewed-against: null
+  last-run: 2026-06-29T02:33:10Z
+  reviewed-against: 7dfc54d28eb1a69c8f0d3a6f23cdb565b8ca5f27
   must-violations: 0
-  should-violations: 0
+  should-violations: 3
   low-confidence: 0
   blocking: false
 ---
