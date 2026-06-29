@@ -6,6 +6,7 @@
 //! spans. Those types live in the [`block`] module; diagnostics in
 //! [`diagnostic`]; source locations in [`span`].
 
+pub mod attr;
 pub mod block;
 pub mod diagnostic;
 pub mod span;

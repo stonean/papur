@@ -10,10 +10,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 2. Attribute brace-group parser (`attr` module)
 
-- [ ] Create `crates/papur-core/src/attr/mod.rs` with `Attributes`, `RoleRef` (constructed from `.class` tokens), `KeyValues`, and `parse_attributes(group, mode)`.
-- [ ] Handle classes (with `g.`/`l.`/unprefixed namespace capture), `#id`, `key=value`, unquoted single-token values, and double-quoted values with spaces.
-- [ ] Emit `P021` on a second `#id`; emit `P022` on `{=value}`; treat `{}` as empty and `{key=}` as an empty value (no diagnostic).
-- [ ] **Done when:** unit tests cover each token form and degenerate form, asserting both the parsed `Attributes` and the emitted diagnostics for strict and lenient mode.
+- [x] Create `crates/papur-core/src/attr/mod.rs` with `Attributes`, `RoleRef` (constructed from `.class` tokens), `KeyValues`, and `parse_attributes(group, mode)`.
+- [x] Handle classes (with `g.`/`l.`/unprefixed namespace capture), `#id`, `key=value`, unquoted single-token values, and double-quoted values with spaces.
+- [x] Emit `P021` on a second `#id`; emit `P022` on `{=value}`; treat `{}` as empty and `{key=}` as an empty value (no diagnostic).
+- [x] **Done when:** unit tests cover each token form and degenerate form, asserting both the parsed `Attributes` and the emitted diagnostics for strict and lenient mode.
 
 ## 3. Attribute classification (verbatim vs `data-`)
 
