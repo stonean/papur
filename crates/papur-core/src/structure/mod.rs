@@ -2,10 +2,13 @@
 //!
 //! Consumes a raw `Block::Content` span and produces a provisional
 //! [`StructureTree`] — the role/scope skeleton the web emitter (spec 010) walks
-//! and that spec 016 will subsume into the canonical AST. This module builds the
-//! fenced-div layer: a stack-based `:::` scan that nests `::: name [attrs]`
-//! blocks and reports an unbalanced or dangling marker as `PAPUR-P002`.
-//! Headings, inline spans, and the heading scope rule arrive in a later task.
+//! and that spec 016 will subsume into the canonical AST. It recognizes the
+//! three role constructs — `::: name [attrs]` fenced divs, ATX headings (with
+//! pre-text and post-text attribute groups), and `[text]{attrs}` inline spans —
+//! and assembles them into a nested scope tree. Fence depth and the heading
+//! scope rule are tracked together on one frame stack; an unbalanced or dangling
+//! `:::` marker is reported as `PAPUR-P002`. Prose is held verbatim for the
+//! downstream Markdown/AST pass.
 
 use crate::attr::{Attributes, parse_attributes};
 use crate::block::ParseMode;
@@ -24,6 +27,27 @@ pub struct StructureTree {
 /// One node in the structure tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
+    /// An ATX heading. A pre-text group attaches to the heading element
+    /// (`opens_scope == false`); a post-text group opens a section scope
+    /// (`opens_scope == true`) whose contents are `children` and whose class is
+    /// carried by `attrs`.
+    Heading {
+        /// Heading level, 1–6.
+        level: u8,
+        /// The heading's text content.
+        text: String,
+        /// Attributes: on the heading element when `!opens_scope`, on the
+        /// wrapping section when `opens_scope`.
+        attrs: Attributes,
+        /// Whether this heading opens a section scope.
+        opens_scope: bool,
+        /// Fence nesting depth (0 at the top level).
+        fence_depth: u32,
+        /// Section contents when `opens_scope`; empty otherwise.
+        children: Vec<Node>,
+        /// The span of the heading line.
+        span: Span,
+    },
     /// A `::: name [attrs]` fenced div. `name` is the primary class; trailing
     /// attributes apply to the same element. Nested fences are `children`.
     FencedDiv {
@@ -38,16 +62,26 @@ pub enum Node {
         /// The span of the opening fence line.
         span: Span,
     },
+    /// An inline `[text]{attrs}` span. Attaches to the bracketed text and never
+    /// opens a scope.
+    InlineSpan {
+        /// The bracketed text.
+        text: String,
+        /// The attribute group following the bracket.
+        attrs: Attributes,
+        /// The span covering `[text]{attrs}`.
+        span: Span,
+    },
     /// A run of prose held verbatim for the downstream Markdown/AST pass.
     Prose {
-        /// The raw prose text (consecutive non-fence lines, newline-joined).
+        /// The raw prose text (consecutive non-construct lines, newline-joined).
         text: String,
         /// The span covering the run.
         span: Span,
     },
 }
 
-/// Parse one content span into a [`StructureTree`], tracking fenced-div depth.
+/// Parse one content span into a [`StructureTree`].
 ///
 /// An unbalanced or dangling `:::` marker is `PAPUR-P002` in strict mode; in
 /// lenient mode a dangling closer is kept as literal prose and an unterminated
@@ -60,28 +94,33 @@ pub fn parse_structure(text: &str, mode: ParseMode) -> (StructureTree, Vec<Diagn
     for line in lines_with_offsets(text) {
         let trimmed = line.text.trim_start();
         if let Some(after_colons) = trimmed.strip_prefix(":::") {
-            // A fence marker breaks any accumulating prose run.
-            prose.flush(current(&mut stack));
+            flush_prose(&mut prose, &mut stack, mode, &mut diags);
             if after_colons.trim().is_empty() {
                 close_fence(&mut stack, &line, mode, &mut diags);
             } else {
                 open_fence(&mut stack, &line, mode, &mut diags);
             }
+        } else if let Some(heading) = parse_heading(&line, mode, &mut diags) {
+            flush_prose(&mut prose, &mut stack, mode, &mut diags);
+            handle_heading(&mut stack, heading);
         } else {
             prose.push(&line);
         }
     }
-    prose.flush(current(&mut stack));
+    flush_prose(&mut prose, &mut stack, mode, &mut diags);
 
-    // Any fences still open at end of input are unterminated openers.
+    // Close everything still open. An unterminated fence is `P002` in strict
+    // mode; an open section just closes at end of input.
     while stack.len() > 1 {
         let frame = stack.pop().expect("non-root frame present");
-        let open = frame.open.expect("non-root frame has an open div");
-        if mode == ParseMode::Strict {
+        if let FrameKind::Fence(open) = &frame.kind
+            && mode == ParseMode::Strict
+        {
             diags.push(dangling(open.span));
         }
-        let node = open.into_node(frame.children);
-        current(&mut stack).push(node);
+        if let Some(node) = finish_frame(frame) {
+            current(&mut stack).push(node);
+        }
     }
 
     let root = stack.pop().expect("root frame present");
@@ -94,22 +133,32 @@ pub fn parse_structure(text: &str, mode: ParseMode) -> (StructureTree, Vec<Diagn
     )
 }
 
-/// A node being assembled: the root (`open == None`) or an open fenced div.
+/// A node being assembled, with its accumulating children.
 struct Frame {
-    open: Option<OpenDiv>,
+    kind: FrameKind,
     children: Vec<Node>,
 }
 
 impl Frame {
     fn root() -> Self {
         Frame {
-            open: None,
+            kind: FrameKind::Root,
             children: Vec::new(),
         }
     }
 }
 
-/// The header of a fence that is still open.
+/// What a [`Frame`] represents.
+enum FrameKind {
+    /// The document root.
+    Root,
+    /// An open `::: name` fenced div.
+    Fence(OpenDiv),
+    /// An open post-text-roled heading section.
+    Section(OpenHeading),
+}
+
+/// A fence still open on the stack.
 struct OpenDiv {
     name: String,
     attrs: Attributes,
@@ -117,15 +166,35 @@ struct OpenDiv {
     span: Span,
 }
 
-impl OpenDiv {
-    fn into_node(self, children: Vec<Node>) -> Node {
-        Node::FencedDiv {
-            name: self.name,
-            attrs: self.attrs,
-            fence_depth: self.fence_depth,
-            children,
-            span: self.span,
-        }
+/// A heading section still open on the stack.
+struct OpenHeading {
+    level: u8,
+    text: String,
+    attrs: Attributes,
+    fence_depth: u32,
+    span: Span,
+}
+
+/// Turn a finished frame into its node (the root yields nothing).
+fn finish_frame(frame: Frame) -> Option<Node> {
+    match frame.kind {
+        FrameKind::Root => None,
+        FrameKind::Fence(open) => Some(Node::FencedDiv {
+            name: open.name,
+            attrs: open.attrs,
+            fence_depth: open.fence_depth,
+            children: frame.children,
+            span: open.span,
+        }),
+        FrameKind::Section(open) => Some(Node::Heading {
+            level: open.level,
+            text: open.text,
+            attrs: open.attrs,
+            opens_scope: true,
+            fence_depth: open.fence_depth,
+            children: frame.children,
+            span: open.span,
+        }),
     }
 }
 
@@ -137,6 +206,14 @@ fn current(stack: &mut [Frame]) -> &mut Vec<Node> {
         .children
 }
 
+/// The number of open fences on the stack — the current fence depth.
+fn fence_depth(stack: &[Frame]) -> u32 {
+    stack
+        .iter()
+        .filter(|f| matches!(f.kind, FrameKind::Fence(_)))
+        .count() as u32
+}
+
 /// Open a fenced div: parse its header and push a new frame.
 fn open_fence(
     stack: &mut Vec<Frame>,
@@ -144,10 +221,10 @@ fn open_fence(
     mode: ParseMode,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let depth = (stack.len() - 1) as u32;
+    let depth = fence_depth(stack);
     let (name, attrs) = parse_fence_header(line, mode, diags);
     stack.push(Frame {
-        open: Some(OpenDiv {
+        kind: FrameKind::Fence(OpenDiv {
             name,
             attrs,
             fence_depth: depth,
@@ -157,18 +234,27 @@ fn open_fence(
     });
 }
 
-/// Close the top fenced div, or report a dangling closer when none is open.
+/// Close the top fence — also closing any heading sections opened inside it
+/// (rule 2: the fence closer closes scopes opened within it) — or report a
+/// dangling closer when no fence is open.
 fn close_fence(
     stack: &mut Vec<Frame>,
     line: &LineInfo,
     mode: ParseMode,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if stack.len() > 1 {
-        let frame = stack.pop().expect("non-root frame present");
-        let open = frame.open.expect("non-root frame has an open div");
-        let node = open.into_node(frame.children);
-        current(stack).push(node);
+    let has_open_fence = stack.iter().any(|f| matches!(f.kind, FrameKind::Fence(_)));
+    if has_open_fence {
+        loop {
+            let frame = stack.pop().expect("a fence is open");
+            let is_fence = matches!(frame.kind, FrameKind::Fence(_));
+            if let Some(node) = finish_frame(frame) {
+                current(stack).push(node);
+            }
+            if is_fence {
+                break;
+            }
+        }
     } else {
         let span = line_span(line);
         if mode == ParseMode::Strict {
@@ -182,8 +268,132 @@ fn close_fence(
     }
 }
 
-/// Parse a `name [attrs]` fence header. Trailing attributes reuse the brace-
-/// group parser; their diagnostics are offset to the source position.
+/// A parsed heading line, before it is placed in the tree.
+struct ParsedHeading {
+    level: u8,
+    text: String,
+    attrs: Attributes,
+    post_text: bool,
+    span: Span,
+}
+
+/// Apply the heading scope rule, then either open a section (post-text role) or
+/// emit a plain heading element (pre-text role or no role).
+fn handle_heading(stack: &mut Vec<Frame>, heading: ParsedHeading) {
+    // Close sections at the current fence depth whose level is equal or higher
+    // (level number ≤). The loop stops at a shallower section (an ancestor) or
+    // at a fence — never crossing into a different fence depth.
+    while matches!(
+        stack.last(),
+        Some(Frame { kind: FrameKind::Section(open), .. }) if open.level >= heading.level
+    ) {
+        let frame = stack.pop().expect("checked Section on top");
+        if let Some(node) = finish_frame(frame) {
+            current(stack).push(node);
+        }
+    }
+
+    let depth = fence_depth(stack);
+    if heading.post_text {
+        stack.push(Frame {
+            kind: FrameKind::Section(OpenHeading {
+                level: heading.level,
+                text: heading.text,
+                attrs: heading.attrs,
+                fence_depth: depth,
+                span: heading.span,
+            }),
+            children: Vec::new(),
+        });
+    } else {
+        current(stack).push(Node::Heading {
+            level: heading.level,
+            text: heading.text,
+            attrs: heading.attrs,
+            opens_scope: false,
+            fence_depth: depth,
+            children: Vec::new(),
+            span: heading.span,
+        });
+    }
+}
+
+/// Parse an ATX heading line, or `None` when the line is not a heading.
+fn parse_heading(
+    line: &LineInfo,
+    mode: ParseMode,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<ParsedHeading> {
+    let trimmed = line.text.trim_start();
+    let leading_ws = line.text.len() - trimmed.len();
+    let hashes = trimmed.bytes().take_while(|b| *b == b'#').count();
+    if hashes == 0 || hashes > 6 {
+        return None;
+    }
+    let after = &trimmed[hashes..];
+    // ATX headings require a space after the `#` run (or an empty body).
+    if !after.is_empty() && !after.starts_with(' ') {
+        return None;
+    }
+    let after_ws = after.len() - after.trim_start().len();
+    let body = after.trim();
+    let body_byte = leading_ws + hashes + after_ws;
+
+    let (text, attrs, post_text) = parse_heading_role(body, body_byte, line, mode, diags);
+    Some(ParsedHeading {
+        level: hashes as u8,
+        text,
+        attrs,
+        post_text,
+        span: line_span(line),
+    })
+}
+
+/// Split a heading body into its text and role group, classifying the role as
+/// pre-text (attaches to the element) or post-text (opens a section scope).
+fn parse_heading_role(
+    body: &str,
+    body_byte: usize,
+    line: &LineInfo,
+    mode: ParseMode,
+    diags: &mut Vec<Diagnostic>,
+) -> (String, Attributes, bool) {
+    if let Some(rest) = body.strip_prefix('{')
+        && let Some(close) = rest.find('}')
+    {
+        let group = &rest[..close];
+        let text = rest[close + 1..].trim().to_string();
+        let col = body_byte + 1;
+        let attrs = parse_group(
+            group,
+            line.start_byte + col,
+            line.line_no,
+            col as u32,
+            mode,
+            diags,
+        );
+        return (text, attrs, false);
+    }
+    if body.ends_with('}')
+        && let Some(open) = body.rfind('{')
+    {
+        let group = &body[open + 1..body.len() - 1];
+        let text = body[..open].trim().to_string();
+        let col = body_byte + open + 1;
+        let attrs = parse_group(
+            group,
+            line.start_byte + col,
+            line.line_no,
+            col as u32,
+            mode,
+            diags,
+        );
+        return (text, attrs, true);
+    }
+    (body.to_string(), Attributes::default(), false)
+}
+
+/// Parse a `name [attrs]` fence header.
 fn parse_fence_header(
     line: &LineInfo,
     mode: ParseMode,
@@ -199,24 +409,43 @@ fn parse_fence_header(
     let attr_raw = &header[name_end..];
     let attr_ws = attr_raw.len() - attr_raw.trim_start().len();
     let attr_text = attr_raw.trim();
-    let (attrs, attr_diags) = parse_attributes(attr_text, mode);
+    let col = leading_ws + 3 + name_ws + name_end + attr_ws;
+    let attrs = parse_group(
+        attr_text,
+        line.start_byte + col,
+        line.line_no,
+        col as u32,
+        mode,
+        diags,
+    );
+    (name, attrs)
+}
 
-    let byte_base = line.start_byte + leading_ws + 3 + name_ws + name_end + attr_ws;
-    let col_base = (leading_ws + 3 + name_ws + name_end + attr_ws) as u32;
-    for d in attr_diags {
+/// Parse a brace-group's inner text, offsetting its diagnostics from the group
+/// position (`byte_base` / `col_base`, both relative to the source) into source
+/// coordinates.
+fn parse_group(
+    group: &str,
+    byte_base: usize,
+    line_no: u32,
+    col_base: u32,
+    mode: ParseMode,
+    diags: &mut Vec<Diagnostic>,
+) -> Attributes {
+    let (attrs, group_diags) = parse_attributes(group, mode);
+    for d in group_diags {
         diags.push(Diagnostic::new(
             d.code,
             d.message,
             Span {
-                start_line: line.line_no,
+                start_line: line_no,
                 start_col: col_base + d.span.start_col,
                 start_byte: byte_base + d.span.start_byte,
                 end_byte: byte_base + d.span.end_byte,
             },
         ));
     }
-
-    (name, attrs)
+    attrs
 }
 
 /// Build a `PAPUR-P002` dangling-content-fence diagnostic.
@@ -236,6 +465,146 @@ fn line_span(line: &LineInfo) -> Span {
         start_byte: line.start_byte,
         end_byte: line.end_byte,
     }
+}
+
+/// Flush any accumulated prose into the current frame, splitting inline spans
+/// out of the run.
+fn flush_prose(
+    prose: &mut ProseBuffer,
+    stack: &mut [Frame],
+    mode: ParseMode,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if let Some((run, span)) = prose.take() {
+        emit_run(&run, span, mode, current(stack), diags);
+    }
+}
+
+/// Emit a prose run as `Prose` and `InlineSpan` nodes.
+fn emit_run(
+    run: &str,
+    span: Span,
+    mode: ParseMode,
+    into: &mut Vec<Node>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for seg in split_inline(run) {
+        match seg {
+            InlineSeg::Text { start, text } => {
+                if !text.is_empty() {
+                    into.push(Node::Prose {
+                        text: text.to_string(),
+                        span: run_span(span, start, text.len()),
+                    });
+                }
+            }
+            InlineSeg::Span {
+                start,
+                text,
+                group_start,
+                attrs,
+            } => {
+                let parsed = parse_group(
+                    attrs,
+                    span.start_byte + group_start,
+                    span.start_line,
+                    group_start as u32,
+                    mode,
+                    diags,
+                );
+                let end = group_start + attrs.len() + 1;
+                into.push(Node::InlineSpan {
+                    text: text.to_string(),
+                    attrs: parsed,
+                    span: Span {
+                        start_line: span.start_line,
+                        start_col: start as u32 + 1,
+                        start_byte: span.start_byte + start,
+                        end_byte: span.start_byte + end,
+                    },
+                });
+            }
+        }
+    }
+}
+
+/// A span for a sub-slice of a prose run at byte offset `start`.
+fn run_span(run: Span, start: usize, len: usize) -> Span {
+    Span {
+        start_line: run.start_line,
+        start_col: start as u32 + 1,
+        start_byte: run.start_byte + start,
+        end_byte: run.start_byte + start + len,
+    }
+}
+
+/// A segment of a prose run: plain text or an inline span.
+enum InlineSeg<'a> {
+    Text {
+        start: usize,
+        text: &'a str,
+    },
+    Span {
+        start: usize,
+        text: &'a str,
+        group_start: usize,
+        attrs: &'a str,
+    },
+}
+
+/// Split a run into text and `[text]{attrs}` inline-span segments.
+fn split_inline(run: &str) -> Vec<InlineSeg<'_>> {
+    let mut segs = Vec::new();
+    let bytes = run.as_bytes();
+    let mut i = 0;
+    let mut text_start = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'['
+            && let Some((text, group_start, attrs, end)) = try_inline(run, i)
+        {
+            if i > text_start {
+                segs.push(InlineSeg::Text {
+                    start: text_start,
+                    text: &run[text_start..i],
+                });
+            }
+            segs.push(InlineSeg::Span {
+                start: i,
+                text,
+                group_start,
+                attrs,
+            });
+            i = end;
+            text_start = end;
+            continue;
+        }
+        i += 1;
+    }
+    if text_start < run.len() {
+        segs.push(InlineSeg::Text {
+            start: text_start,
+            text: &run[text_start..],
+        });
+    }
+    segs
+}
+
+/// Try to read a `[text]{attrs}` inline span at the `[` at byte `lb`. Returns
+/// the label, the attr group's start offset, the attr text, and the byte index
+/// just past the closing `}`.
+fn try_inline(run: &str, lb: usize) -> Option<(&str, usize, &str, usize)> {
+    let after = &run[lb + 1..];
+    let rb = lb + 1 + after.find(']')?;
+    let label = &run[lb + 1..rb];
+    let rest = &run[rb + 1..];
+    if !rest.starts_with('{') {
+        return None;
+    }
+    let close = rest.find('}')?;
+    let attrs = &rest[1..close];
+    let group_start = rb + 2;
+    let end = rb + 1 + close + 1;
+    Some((label, group_start, attrs, end))
 }
 
 /// A line of source with its byte offsets, the trailing newline excluded.
@@ -278,7 +647,7 @@ fn lines_with_offsets(text: &str) -> Vec<LineInfo<'_>> {
     out
 }
 
-/// Accumulates consecutive non-fence lines into a single [`Node::Prose`].
+/// Accumulates consecutive non-construct lines into a single prose run.
 #[derive(Default)]
 struct ProseBuffer {
     text: String,
@@ -302,20 +671,20 @@ impl ProseBuffer {
         self.end_byte = line.end_byte;
     }
 
-    fn flush(&mut self, into: &mut Vec<Node>) {
+    fn take(&mut self) -> Option<(String, Span)> {
         if !self.active {
-            return;
+            return None;
         }
-        into.push(Node::Prose {
-            text: std::mem::take(&mut self.text),
-            span: Span {
+        self.active = false;
+        Some((
+            std::mem::take(&mut self.text),
+            Span {
                 start_line: self.start_line,
                 start_col: 1,
                 start_byte: self.start_byte,
                 end_byte: self.end_byte,
             },
-        });
-        self.active = false;
+        ))
     }
 }
 
@@ -346,6 +715,29 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
+    fn as_heading(node: &Node) -> (u8, &str, &Attributes, bool, &[Node]) {
+        match node {
+            Node::Heading {
+                level,
+                text,
+                attrs,
+                opens_scope,
+                children,
+                ..
+            } => (*level, text, attrs, *opens_scope, children),
+            other => panic!("expected Heading, got {other:?}"),
+        }
+    }
+
+    fn prose_contains(nodes: &[Node], needle: &str) -> bool {
+        nodes
+            .iter()
+            .any(|n| matches!(n, Node::Prose { text, .. } if text.contains(needle)))
+    }
+
+    // --- fenced divs (task 5) ---
+
     #[test]
     fn balanced_fence_nests_content() {
         let (tree, diags) = parse("::: hero\ncontent\n:::");
@@ -354,7 +746,7 @@ mod tests {
         let (name, _, depth, children) = as_div(&tree.nodes[0]);
         assert_eq!(name, "hero");
         assert_eq!(depth, 0);
-        assert!(matches!(&children[0], Node::Prose { text, .. } if text == "content"));
+        assert!(prose_contains(children, "content"));
     }
 
     #[test]
@@ -386,7 +778,7 @@ mod tests {
         let (iname, _, idepth, ichildren) = as_div(inner);
         assert_eq!(iname, "card");
         assert_eq!(idepth, 1);
-        assert!(matches!(&ichildren[0], Node::Prose { text, .. } if text == "  deep"));
+        assert!(prose_contains(ichildren, "deep"));
     }
 
     #[test]
@@ -408,14 +800,144 @@ mod tests {
         assert_eq!(codes(&diags), vec!["PAPUR-P002"]);
         let (name, _, _, children) = as_div(&tree.nodes[0]);
         assert_eq!(name, "hero");
-        assert!(matches!(&children[0], Node::Prose { text, .. } if text == "content"));
+        assert!(prose_contains(children, "content"));
+    }
+
+    // --- headings, scopes, inline spans (task 6) ---
+
+    #[test]
+    fn pre_text_role_attaches_to_heading_element() {
+        let (tree, diags) = parse("### {.hero} Welcome");
+        assert!(diags.is_empty());
+        let (level, text, attrs, opens, _) = as_heading(&tree.nodes[0]);
+        assert_eq!(level, 3);
+        assert_eq!(text, "Welcome");
+        assert!(!opens);
+        assert_eq!(attrs.roles[0].name, "hero");
     }
 
     #[test]
-    fn unterminated_opener_lenient_has_no_diag() {
-        let (tree, diags) = parse_structure("::: hero\ncontent", ParseMode::Lenient);
+    fn post_text_role_opens_section_scope() {
+        let (tree, diags) = parse("### Welcome {.hero}\ncontent");
         assert!(diags.is_empty());
-        let (name, ..) = as_div(&tree.nodes[0]);
-        assert_eq!(name, "hero");
+        let (level, text, attrs, opens, children) = as_heading(&tree.nodes[0]);
+        assert_eq!(level, 3);
+        assert_eq!(text, "Welcome");
+        assert!(opens);
+        assert_eq!(attrs.roles[0].name, "hero");
+        assert!(prose_contains(children, "content"));
+    }
+
+    #[test]
+    fn inline_span_attaches_and_opens_no_scope() {
+        let (tree, diags) = parse("Click [here]{.btn} now");
+        assert!(diags.is_empty());
+        assert!(
+            tree.nodes
+                .iter()
+                .all(|n| !matches!(n, Node::Heading { .. }))
+        );
+        let span = tree
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::InlineSpan { text, attrs, .. } => Some((text.clone(), attrs.clone())),
+                _ => None,
+            })
+            .expect("inline span present");
+        assert_eq!(span.0, "here");
+        assert_eq!(span.1.roles[0].name, "btn");
+    }
+
+    #[test]
+    fn sibling_heading_closes_scope() {
+        let (tree, _) = parse("## A {.s1}\ncontent\n## B {.s2}\nmore");
+        assert_eq!(tree.nodes.len(), 2);
+        let (_, a_text, _, a_opens, a_children) = as_heading(&tree.nodes[0]);
+        assert_eq!(a_text, "A");
+        assert!(a_opens);
+        assert!(prose_contains(a_children, "content"));
+        let (_, b_text, ..) = as_heading(&tree.nodes[1]);
+        assert_eq!(b_text, "B");
+    }
+
+    #[test]
+    fn deeper_heading_nests_scope() {
+        let (tree, _) = parse("## A {.s1}\n### B {.s2}\nx");
+        assert_eq!(tree.nodes.len(), 1);
+        let (.., a_children) = as_heading(&tree.nodes[0]);
+        let nested = a_children
+            .iter()
+            .find(|n| matches!(n, Node::Heading { .. }))
+            .expect("nested heading");
+        let (level, b_text, ..) = as_heading(nested);
+        assert_eq!(level, 3);
+        assert_eq!(b_text, "B");
+    }
+
+    #[test]
+    fn inner_fence_does_not_close_outer_heading_scope() {
+        // The multi-role nesting example from the spec.
+        let text = "::: grid cols=3\n\
+                    ### Fast {.carda}\n\
+                    Content.\n\
+                    \n\
+                    \u{20}\u{20}::: grid cols=2\n\
+                    \u{20}\u{20}Still in .carda.\n\
+                    \n\
+                    \u{20}\u{20}#### Smaller {.card1}\n\
+                    \u{20}\u{20}In .carda > .card1.\n\
+                    \u{20}\u{20}:::\n\
+                    :::";
+        let (tree, diags) = parse(text);
+        assert!(diags.is_empty());
+
+        let (gname, gattrs, _, gchildren) = as_div(&tree.nodes[0]);
+        assert_eq!(gname, "grid");
+        assert_eq!(gattrs.attrs.get("cols").map(String::as_str), Some("3"));
+
+        let carda = gchildren
+            .iter()
+            .find(|n| {
+                matches!(
+                    n,
+                    Node::Heading {
+                        opens_scope: true,
+                        ..
+                    }
+                )
+            })
+            .expect("carda section");
+        let (clevel, ctext, cattrs, _, cchildren) = as_heading(carda);
+        assert_eq!(clevel, 3);
+        assert_eq!(ctext, "Fast");
+        assert_eq!(cattrs.roles[0].name, "carda");
+
+        // The nested grid sits inside carda — proving the deeper fence did not
+        // close the outer heading scope.
+        let inner_grid = cchildren
+            .iter()
+            .find(|n| matches!(n, Node::FencedDiv { .. }))
+            .expect("nested grid inside carda");
+        let (igname, igattrs, _, igchildren) = as_div(inner_grid);
+        assert_eq!(igname, "grid");
+        assert_eq!(igattrs.attrs.get("cols").map(String::as_str), Some("2"));
+
+        let card1 = igchildren
+            .iter()
+            .find(|n| {
+                matches!(
+                    n,
+                    Node::Heading {
+                        opens_scope: true,
+                        ..
+                    }
+                )
+            })
+            .expect("card1 section");
+        let (cl, ct, ca, ..) = as_heading(card1);
+        assert_eq!(cl, 4);
+        assert_eq!(ct, "Smaller");
+        assert_eq!(ca.roles[0].name, "card1");
     }
 }

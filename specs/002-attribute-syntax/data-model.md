@@ -129,6 +129,7 @@ pub enum Node {
     /// section scope (`opens_scope = true`) closed per the heading scope rule.
     Heading {
         level: u8,
+        text: String,
         attrs: Attributes,
         opens_scope: bool,
         fence_depth: u32,

@@ -35,10 +35,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 ## 6. Headings, inline spans, position + heading-scope rules (`structure` module)
 
-- [ ] Recognize ATX headings and `[text]{…}` inline spans; attach pre-text groups to the heading element and open a section scope for post-text groups; attach inline-span groups to the bracketed text (never a scope).
-- [ ] Implement the heading scope rule (close on same-fence-depth sibling at equal-or-higher level, or fence closer; deeper fences are separate outline universes) and assemble the `StructureTree`.
-- [ ] Verify nested roles produce nested nodes (descendant structure), not stacked classes.
-- [ ] **Done when:** tests cover pre/post heading attachment, inline-span attachment, scope open/close across fence depths, and the multi-role nesting example from the spec.
+- [x] Recognize ATX headings and `[text]{…}` inline spans; attach pre-text groups to the heading element and open a section scope for post-text groups; attach inline-span groups to the bracketed text (never a scope).
+- [x] Implement the heading scope rule (close on same-fence-depth sibling at equal-or-higher level, or fence closer; deeper fences are separate outline universes) and assemble the `StructureTree`.
+- [x] Verify nested roles produce nested nodes (descendant structure), not stacked classes.
+- [x] **Done when:** tests cover pre/post heading attachment, inline-span attachment, scope open/close across fence depths, and the multi-role nesting example from the spec.
 
 ## 7. File-scoped duplicate-id lint + public API
 
