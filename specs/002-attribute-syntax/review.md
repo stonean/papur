@@ -1,12 +1,12 @@
 ---
 spec: 002-attribute-syntax
-reviewed-at: 2026-06-30T15:47:26Z
-reviewed-against: 2af8175b2820cd018839dffc426c87b670655c05
-diff-base: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
+reviewed-at: 2026-06-30T16:45:59Z
+reviewed-against: 30ec393a590ba3210faa5dbd73f315732b4e0afa
+diff-base: 2af8175b2820cd018839dffc426c87b670655c05
 must-violations: 0
 should-violations: 0
 low-confidence: 0
-captured-issues: 0
+captured-issues: 1
 skipped-passes: []
 ---
 
@@ -15,48 +15,24 @@ skipped-passes: []
 ## Summary
 
 Clean across all five passes: **0 MUST, 0 SHOULD, 0 low-confidence**, non-blocking.
-The reviewed scope is the role/scope parser in `papur-core` (`attr`, `structure`,
-`role`, `diagnostic`, the re-exports in `lib.rs`, and the acceptance tests) — a
-pure, in-memory parsing library with no network, database, filesystem,
-concurrency, logging, environment, or HTTP-API surface. The quadratic
-inline-span finding the prior pass surfaced is now committed (`2af8175`), so this
-run reproduces the clean result; no code changed in the review window
-(`6bf77a5..HEAD` is that single fix), consistent with the idempotency contract.
-The spec stays eligible for `done` from the review gate's side.
+This run re-reviews the `:::`-header grammar change committed in `30ec393`
+(diff window `2af8175..HEAD`): `parse_fence_header` now parses the entire header
+through `parse_attributes` as a unified attribute group — a bare word names the
+element (`Attributes.element`), `.class` adds a class, `#id`/`key=value` apply —
+and `FencedDiv` drops its `name` field for `attrs`. Element *resolution* stays
+deferred to spec 003; 002 captures the bareword and stops. The change is a net
+simplification (less bespoke parsing, one fewer node field) and introduces no
+new security, efficiency, or correctness risk. 22 tests pass, `cargo clippy
+--all-targets -- -D warnings` is clean, and the feature dir is
+markdownlint-clean. The spec is unblocked from the review gate's side.
 
 Rule files loaded: `api-backend.md`, `concurrency-backend.md`,
 `configuration-cross.md`, `observability-backend.md`, `performance-backend.md`,
 `quality-cross.md`, `reliability-backend.md`, `security-backend.md` — the
 `backend` + `cross` selection per `.govern.toml` `[rules] surfaces = ["backend"]`,
-with no `[[review.disabled-rule-files]]` entries. The server-oriented families
-select no patterns because the module introduces none of their gated surfaces:
-
-- **security-backend** — no AUTHN/AUTHZ/API/DATA/LOG/ERR/DEPS surface; no
-  SQL/shell/template construction; no user-controlled filesystem paths; no
-  untrusted-binary deserialization (the only YAML is the frontmatter handled by
-  001, data-only). No reachable panic from input: the production `.expect()`
-  calls in `structure/mod.rs` are each guarded by a stack / `fence_count`
-  invariant ("stack always has the root frame", "a fence is open" only after
-  `fence_count > 0`, etc.); every other `unwrap`/`panic!` is test-only.
-  `BE-INPUT-006` (resource exhaustion / ReDoS) does not fire — the scanners use
-  no regex, and `collect_ids` (`structure/mod.rs:179`) walks the tree with an
-  explicit work stack precisely to avoid call-stack overflow on deep input.
-- **configuration-cross** — clean. The `HTML_ATTRIBUTES` allowlist and the
-  `FENCE_MARKER` / `FENCE_MARKER_LEN` / `MAX_HEADING_LEVEL` grammar constants are
-  named and module-local (`CFG-CONST-002`); `HTML_ATTRIBUTES` is the centralized
-  single source of truth for the verbatim/`data-` boundary the plan commits to.
-  The `:::` marker also appearing in 001's block scanner is **not** a
-  `CFG-CONST-001` violation: that rule targets operator-tunable cross-module
-  *defaults* that drift, whereas `:::` is a fixed grammar sigil, and the
-  block-segmentation (001) and content-fence (002) parsers are deliberately
-  decoupled per the spec boundary — each correctly owns its module-local marker.
-- **concurrency / observability / performance / reliability-backend** — no shared
-  state, metrics, queries, pools, timeouts, retries, or service lifecycle;
-  nothing selected.
-- **quality-cross** `QUAL-STUB-001` — no silent stubs. `RoleRegistry` is an
-  interface whose population is documented downstream work (theming / CSS layer);
-  `resolve()` is fully implemented and fails loudly (`PAPUR-P023`) on a
-  forced-prefix miss in strict mode rather than passing through.
+no `[[review.disabled-rule-files]]`. The reviewed code remains a pure in-memory
+parser with no network, database, filesystem, concurrency, logging, environment,
+or HTTP-API surface, so the backend-service rule families select no patterns.
 
 ## MUST violations (blocking)
 
@@ -76,20 +52,50 @@ select no patterns because the module introduces none of their gated surfaces:
 
 ## Captured issues (pending /papur:groom)
 
-*None — `specs/inbox.md` had no additions in the review window (`6bf77a5..HEAD`).*
+- **Markdownlint MD049 in `specs/001-file-format/review.md:69`** — the line uses
+  `*N*` (asterisk emphasis) where that file's consistent style is underscore, so
+  `npx markdownlint-cli2` fails on the repo-wide glob. A markdown-hygiene chore
+  outside 002's feature dir; it did not block 002's gate. Appended to
+  `specs/inbox.md` during the implement run that produced `30ec393`. Run
+  `/papur:groom` to route it.
 
 ## Skipped passes
 
 *None — all five passes ran.*
 
-## Note for the gate (informational, not a finding)
+## Pass notes
 
-Acceptance criterion 13/14 — *"A `:::` header parses as an attribute group: a
-bare word names the element, a `.class` adds a class…"* — is unchecked, and
-`parse_fence_header` (`structure/mod.rs:502`) still takes the first `:::` token
-as the literal `name` rather than dot-prefix → class / bare-word → element. This
-is the open work that reopened the spec from `done` to `in-progress`, not a rule
-violation: element resolution is owned by spec 003, and `QUAL-STUB-001` does not
-apply because the path does real parsing work rather than silently passing
-through. Completing that AC is a `/papur:implement` concern; the review gate is
-clean for the code as it stands.
+- **Security** — The change adds no security surface: `element` capture is a
+  `String` clone, and `parse_fence_header` does no I/O, regex, or recursion.
+  Nothing in `security-backend.md` selects.
+- **Reuse** — The change *removes* duplication: `parse_fence_header` previously
+  hand-split the first token as a "name" and then parsed the remainder; it now
+  routes the whole header through `parse_attributes`, the single attribute-group
+  parser shared with headings and inline spans.
+- **Quality** — Diagnostic offsets in `parse_fence_header` are correct (byte and
+  column bases account for `:::` plus leading whitespace, matching the prior
+  convention); the bare-word path is first-wins with no diagnostic; every
+  `FencedDiv` consumer (`finish_frame`, `collect_ids`, tests) was updated; the
+  insta snapshot regenerated to the dotted `::: .grid` form and was inspected
+  (`element: None`, `roles: [grid]`, `cols` data attr → `<div class="grid"
+  data-cols="3">`, nesting preserved as descendant structure). One **documented
+  consequence, not a finding**: a bare word inside a *heading* `{…}` group (e.g.
+  a forgotten dot, `## {hero}`) is now captured into the unused `element` field
+  rather than emitting `PAPUR-P022`. This is intended under the unified grammar
+  (`Attributes.element` is "meaningful only for the `:::` header"), and bare-word
+  validity is owned by spec 003's element resolution — so the diagnostic moves to
+  the 003 layer rather than being lost. No loaded rule covers it; recorded here
+  for visibility.
+- **Efficiency** — `parse_fence_header` is linear in header length; no new
+  quadratic or unbounded path.
+- **Simplicity** — Net simpler: one fewer `Node` field and the removal of the
+  bespoke name/attr split. No premature abstraction or dead branch introduced.
+
+## Note for the gate (informational)
+
+The acceptance criterion *"A `:::` header parses as an attribute group…"* is now
+implemented and covered by `ac12_fence_header_attribute_group`. With this review
+clean against `30ec393`, the `/papur:implement` completion gate can verify the
+acceptance criteria and propose the `in-progress → done` transition. Task 9
+subtask 3 (which required this review re-run against the changed code) is now
+satisfiable.

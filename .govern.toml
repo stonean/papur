@@ -9,6 +9,9 @@ languages = ["Rust"]
 [rules]
 surfaces = ["backend"]
 
+[review]
+tech-stack-verified = true
+
 # govern (host)
 [host]
 project = "papur"
