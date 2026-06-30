@@ -1,9 +1,9 @@
 ---
-status: done
+status: in-progress
 dependencies: [001-file-format]
 review:
-  last-run: 2026-06-30T00:33:17Z
-  reviewed-against: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
+  last-run: 2026-06-30T15:47:26Z
+  reviewed-against: 2af8175b2820cd018839dffc426c87b670655c05
   must-violations: 0
   should-violations: 0
   low-confidence: 0
@@ -73,11 +73,11 @@ Headings at deeper fence depths do **not** close outer scopes — each fence is 
 Multiple roles in nested contexts produce nested elements (descendant selectors), not stacked classes on one element:
 
 ```text
-::: grid cols=3
+::: .grid cols=3
 ### Fast {.carda}
 Content.
 
-  ::: grid cols=2
+  ::: .grid cols=2
   Still in .carda.
 
   #### Smaller {.card1}
@@ -106,19 +106,21 @@ Content.
 
 ## Fenced Divs
 
-`::: name` creates a named block. Attributes after the name pass through as element attributes (with `data-` for non-standard keys, per the emitter):
+`:::` opens a fenced block. Everything after the `:::` on the opening line is an **attribute group** — the same grammar a heading uses inside `{…}`, minus the braces (a `:::` line is not prose, so it needs no delimiter):
 
 ```text
-::: hero
+::: .hero
 # Welcome
 :::
 
-::: grid cols=3
+::: .grid cols=3
 ...
 :::
 ```
 
-The block name is the div's primary class. Additional `.class`, `#id`, and `key=value` attributes may follow the name on the same line and apply to the same `<div>` — `::: hero .fancy #top cols=2` emits `<div class="hero fancy" id="top" data-cols="2">`.
+Inside that group a **bare word names the element**, a `.class` adds a class, and `#id` / `key=value` apply as on any element. So `::: .grid cols=3` emits `<div class="grid" data-cols="3">` (no element bareword → the fenced-div default `<div>`), `::: nav .site` emits `<nav class="site">`, and `::: .hero .fancy #top cols=2` emits `<div class="hero fancy" id="top" data-cols="2">`.
+
+A class therefore carries an explicit dot — `::: .grid`, not `::: grid` — so the `:::` header matches the heading attribute grammar exactly, rather than treating the first token as an implicit primary class. What a bare word resolves to — a standard tag, a custom element, or a lint error — is owned by spec 003 (semantic elements); 002 owns the grammar that parses it.
 
 Fenced divs and roled headings both open scopes; the heading scope rule above governs both.
 
@@ -135,7 +137,7 @@ Fenced divs and roled headings both open scopes; the heading scope rule above go
 - [x] An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
 - [x] An inline attribute group `[text]{.foo}` attaches to the bracketed span it follows and never opens a scope; only headings carry the pre-text/post-text section-scope distinction.
 - [x] A forced namespace prefix that cannot be satisfied is a resolution error (strict: lint error; lenient: emit unresolved and warn); an unresolved unprefixed `.foo` is emitted verbatim and is not an error.
-- [x] A fenced div applies its name as the primary class and any trailing `.class`/`#id`/`key=value` attributes to the same `<div>`.
+- [ ] A `:::` header parses as an attribute group: a bare word names the element, a `.class` adds a class, and `#id`/`key=value` apply to the element. `::: .grid cols=3` → `<div class="grid" data-cols="3">`; `::: nav .site` → `<nav class="site">`. A class carries an explicit dot; there is no implicit primary-class name. Element resolution is owned by spec 003.
 - [x] Degenerate attribute groups behave per **Edge Cases**: `{}` is a no-op, `{#a #b}` is a lint error, `{=value}` is a strict-mode parse error and lenient-mode literal content.
 
 ## Edge Cases

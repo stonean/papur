@@ -5,9 +5,14 @@ expression: tree
 StructureTree {
     nodes: [
         FencedDiv {
-            name: "grid",
             attrs: Attributes {
-                roles: [],
+                element: None,
+                roles: [
+                    RoleRef {
+                        namespace: Auto,
+                        name: "grid",
+                    },
+                ],
                 id: None,
                 attrs: {
                     "cols": "3",
@@ -19,6 +24,7 @@ StructureTree {
                     level: 3,
                     text: "Fast",
                     attrs: Attributes {
+                        element: None,
                         roles: [
                             RoleRef {
                                 namespace: Auto,
@@ -36,14 +42,19 @@ StructureTree {
                             span: Span {
                                 start_line: 3,
                                 start_col: 1,
-                                start_byte: 34,
-                                end_byte: 43,
+                                start_byte: 35,
+                                end_byte: 44,
                             },
                         },
                         FencedDiv {
-                            name: "grid",
                             attrs: Attributes {
-                                roles: [],
+                                element: None,
+                                roles: [
+                                    RoleRef {
+                                        namespace: Auto,
+                                        name: "grid",
+                                    },
+                                ],
                                 id: None,
                                 attrs: {
                                     "cols": "2",
@@ -56,14 +67,15 @@ StructureTree {
                                     span: Span {
                                         start_line: 6,
                                         start_col: 1,
-                                        start_byte: 62,
-                                        end_byte: 81,
+                                        start_byte: 64,
+                                        end_byte: 83,
                                     },
                                 },
                                 Heading {
                                     level: 4,
                                     text: "Smaller",
                                     attrs: Attributes {
+                                        element: None,
                                         roles: [
                                             RoleRef {
                                                 namespace: Auto,
@@ -81,32 +93,32 @@ StructureTree {
                                             span: Span {
                                                 start_line: 9,
                                                 start_col: 1,
-                                                start_byte: 106,
-                                                end_byte: 127,
+                                                start_byte: 108,
+                                                end_byte: 129,
                                             },
                                         },
                                     ],
                                     span: Span {
                                         start_line: 8,
                                         start_col: 1,
-                                        start_byte: 82,
-                                        end_byte: 105,
+                                        start_byte: 84,
+                                        end_byte: 107,
                                     },
                                 },
                             ],
                             span: Span {
                                 start_line: 5,
                                 start_col: 1,
-                                start_byte: 44,
-                                end_byte: 61,
+                                start_byte: 45,
+                                end_byte: 63,
                             },
                         },
                     ],
                     span: Span {
                         start_line: 2,
                         start_col: 1,
-                        start_byte: 16,
-                        end_byte: 33,
+                        start_byte: 17,
+                        end_byte: 34,
                     },
                 },
             ],
@@ -114,7 +126,7 @@ StructureTree {
                 start_line: 1,
                 start_col: 1,
                 start_byte: 0,
-                end_byte: 15,
+                end_byte: 16,
             },
         },
     ],

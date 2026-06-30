@@ -3,8 +3,9 @@
 //! Consumes a raw `Block::Content` span and produces a provisional
 //! [`StructureTree`] — the role/scope skeleton the web emitter (spec 010) walks
 //! and that spec 016 will subsume into the canonical AST. It recognizes the
-//! three role constructs — `::: name [attrs]` fenced divs, ATX headings (with
-//! pre-text and post-text attribute groups), and `[text]{attrs}` inline spans —
+//! three role constructs — `:::` fenced divs (whose header is an attribute
+//! group), ATX headings (with pre-text and post-text attribute groups), and
+//! `[text]{attrs}` inline spans —
 //! and assembles them into a nested scope tree. Fence depth and the heading
 //! scope rule are tracked together on one frame stack; an unbalanced or dangling
 //! `:::` marker is reported as `PAPUR-P002`. Prose is held verbatim for the
@@ -55,12 +56,14 @@ pub enum Node {
         /// The span of the heading line.
         span: Span,
     },
-    /// A `::: name [attrs]` fenced div. `name` is the primary class; trailing
-    /// attributes apply to the same element. Nested fences are `children`.
+    /// A `:::` fenced div. The header parses as an attribute group — the same
+    /// grammar as a heading's `{…}`, minus the braces: a bare word names the
+    /// element (`attrs.element`), `.class` adds a class, and `#id`/`key=value`
+    /// apply to the element; there is no implicit primary-class "name". With no
+    /// element bareword the block defaults to `<div>`. Element resolution is
+    /// owned by spec 003. Nested fences are `children`.
     FencedDiv {
-        /// The fence name — the div's primary class.
-        name: String,
-        /// Trailing `.class`/`#id`/`key=value` attributes on the same element.
+        /// The header's parsed attributes: element bareword, classes, id, pairs.
         attrs: Attributes,
         /// Nesting depth (0 for a top-level fence).
         fence_depth: u32,
@@ -261,7 +264,7 @@ impl Frame {
 enum FrameKind {
     /// The document root.
     Root,
-    /// An open `::: name` fenced div.
+    /// An open `:::` fenced div.
     Fence(OpenDiv),
     /// An open post-text-roled heading section.
     Section(OpenHeading),
@@ -269,7 +272,6 @@ enum FrameKind {
 
 /// A fence still open on the stack.
 struct OpenDiv {
-    name: String,
     attrs: Attributes,
     fence_depth: u32,
     span: Span,
@@ -289,7 +291,6 @@ fn finish_frame(frame: Frame) -> Option<Node> {
     match frame.kind {
         FrameKind::Root => None,
         FrameKind::Fence(open) => Some(Node::FencedDiv {
-            name: open.name,
             attrs: open.attrs,
             fence_depth: open.fence_depth,
             children: frame.children,
@@ -325,10 +326,9 @@ fn open_fence(
     diags: &mut Vec<Diagnostic>,
 ) {
     let depth = *fence_count;
-    let (name, attrs) = parse_fence_header(line, mode, diags);
+    let attrs = parse_fence_header(line, mode, diags);
     stack.push(Frame {
         kind: FrameKind::Fence(OpenDiv {
-            name,
             attrs,
             fence_depth: depth,
             span: line_span(line),
@@ -498,32 +498,24 @@ fn parse_heading_role(
     (body.to_string(), Attributes::default(), false)
 }
 
-/// Parse a `name [attrs]` fence header.
-fn parse_fence_header(
-    line: &LineInfo,
-    mode: ParseMode,
-    diags: &mut Vec<Diagnostic>,
-) -> (String, Attributes) {
+/// Parse a `:::` fence header as an attribute group — the same grammar a heading
+/// uses inside `{…}`, minus the braces. A bare word names the element, a
+/// `.class` adds a class, and `#id`/`key=value` apply to the element; there is no
+/// implicit primary-class "name".
+fn parse_fence_header(line: &LineInfo, mode: ParseMode, diags: &mut Vec<Diagnostic>) -> Attributes {
     let leading_ws = line.text.len() - line.text.trim_start().len();
     let after_colons = &line.text[leading_ws + FENCE_MARKER_LEN..];
-    let name_ws = after_colons.len() - after_colons.trim_start().len();
-    let header = after_colons.trim_start();
-    let name_end = header.find(char::is_whitespace).unwrap_or(header.len());
-    let name = header[..name_end].to_string();
-
-    let attr_raw = &header[name_end..];
-    let attr_ws = attr_raw.len() - attr_raw.trim_start().len();
-    let attr_text = attr_raw.trim();
-    let col = leading_ws + FENCE_MARKER_LEN + name_ws + name_end + attr_ws;
-    let attrs = parse_group(
-        attr_text,
+    let header_ws = after_colons.len() - after_colons.trim_start().len();
+    let header = after_colons.trim();
+    let col = leading_ws + FENCE_MARKER_LEN + header_ws;
+    parse_group(
+        header,
         line.start_byte + col,
         line.line_no,
         col as u32,
         mode,
         diags,
-    );
-    (name, attrs)
+    )
 }
 
 /// Parse a brace-group's inner text, offsetting its diagnostics from the group
@@ -850,16 +842,14 @@ mod tests {
         diags.iter().map(|d| d.code.code()).collect()
     }
 
-    #[allow(clippy::type_complexity)]
-    fn as_div(node: &Node) -> (&str, &Attributes, u32, &[Node]) {
+    fn as_div(node: &Node) -> (&Attributes, u32, &[Node]) {
         match node {
             Node::FencedDiv {
-                name,
                 attrs,
                 fence_depth,
                 children,
                 ..
-            } => (name, attrs, *fence_depth, children),
+            } => (attrs, *fence_depth, children),
             other => panic!("expected FencedDiv, got {other:?}"),
         }
     }
@@ -892,18 +882,19 @@ mod tests {
         let (tree, diags) = parse("::: hero\ncontent\n:::");
         assert!(diags.is_empty());
         assert_eq!(tree.nodes.len(), 1);
-        let (name, _, depth, children) = as_div(&tree.nodes[0]);
-        assert_eq!(name, "hero");
+        let (attrs, depth, children) = as_div(&tree.nodes[0]);
+        assert_eq!(attrs.element.as_deref(), Some("hero"));
         assert_eq!(depth, 0);
         assert!(prose_contains(children, "content"));
     }
 
     #[test]
-    fn fence_name_and_trailing_attributes() {
-        let (tree, diags) = parse("::: hero .fancy #top cols=2\n:::");
+    fn fence_header_is_an_attribute_group() {
+        // Bare word → element, `.class` → class, plus `#id` and `key=value`.
+        let (tree, diags) = parse("::: nav .fancy #top cols=2\n:::");
         assert!(diags.is_empty());
-        let (name, attrs, _, _) = as_div(&tree.nodes[0]);
-        assert_eq!(name, "hero");
+        let (attrs, _, _) = as_div(&tree.nodes[0]);
+        assert_eq!(attrs.element.as_deref(), Some("nav"));
         assert_eq!(attrs.roles.len(), 1);
         assert_eq!(attrs.roles[0].name, "fancy");
         assert_eq!(attrs.roles[0].namespace, Namespace::Auto);
@@ -912,20 +903,31 @@ mod tests {
     }
 
     #[test]
+    fn fence_with_only_a_class_has_no_element() {
+        // `::: .grid cols=3` → class + data-cols, no element bareword (→ <div>).
+        let (tree, diags) = parse("::: .grid cols=3\n:::");
+        assert!(diags.is_empty());
+        let (attrs, _, _) = as_div(&tree.nodes[0]);
+        assert_eq!(attrs.element, None);
+        assert_eq!(attrs.roles[0].name, "grid");
+        assert_eq!(attrs.attrs.get("cols").map(String::as_str), Some("3"));
+    }
+
+    #[test]
     fn nested_fences_record_depth() {
         let text = "::: grid cols=3\ninner\n  ::: card\n  deep\n  :::\n:::";
         let (tree, diags) = parse(text);
         assert!(diags.is_empty());
-        let (outer, oattrs, odepth, ochildren) = as_div(&tree.nodes[0]);
-        assert_eq!(outer, "grid");
+        let (oattrs, odepth, ochildren) = as_div(&tree.nodes[0]);
+        assert_eq!(oattrs.element.as_deref(), Some("grid"));
         assert_eq!(odepth, 0);
         assert_eq!(oattrs.attrs.get("cols").map(String::as_str), Some("3"));
         let inner = ochildren
             .iter()
             .find(|n| matches!(n, Node::FencedDiv { .. }))
             .expect("nested div present");
-        let (iname, _, idepth, ichildren) = as_div(inner);
-        assert_eq!(iname, "card");
+        let (iattrs, idepth, ichildren) = as_div(inner);
+        assert_eq!(iattrs.element.as_deref(), Some("card"));
         assert_eq!(idepth, 1);
         assert!(prose_contains(ichildren, "deep"));
     }
@@ -947,8 +949,8 @@ mod tests {
     fn unterminated_opener_strict_is_p002() {
         let (tree, diags) = parse("::: hero\ncontent");
         assert_eq!(codes(&diags), vec!["PAPUR-P002"]);
-        let (name, _, _, children) = as_div(&tree.nodes[0]);
-        assert_eq!(name, "hero");
+        let (attrs, _, children) = as_div(&tree.nodes[0]);
+        assert_eq!(attrs.element.as_deref(), Some("hero"));
         assert!(prose_contains(children, "content"));
     }
 
@@ -1066,8 +1068,8 @@ mod tests {
         let (tree, diags) = parse(text);
         assert!(diags.is_empty());
 
-        let (gname, gattrs, _, gchildren) = as_div(&tree.nodes[0]);
-        assert_eq!(gname, "grid");
+        let (gattrs, _, gchildren) = as_div(&tree.nodes[0]);
+        assert_eq!(gattrs.element.as_deref(), Some("grid"));
         assert_eq!(gattrs.attrs.get("cols").map(String::as_str), Some("3"));
 
         let carda = gchildren
@@ -1093,8 +1095,8 @@ mod tests {
             .iter()
             .find(|n| matches!(n, Node::FencedDiv { .. }))
             .expect("nested grid inside carda");
-        let (igname, igattrs, _, igchildren) = as_div(inner_grid);
-        assert_eq!(igname, "grid");
+        let (igattrs, _, igchildren) = as_div(inner_grid);
+        assert_eq!(igattrs.element.as_deref(), Some("grid"));
         assert_eq!(igattrs.attrs.get("cols").map(String::as_str), Some("2"));
 
         let card1 = igchildren

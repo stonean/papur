@@ -136,11 +136,14 @@ pub enum Node {
         children: Vec<Node>,
         span: Span,
     },
-    /// A `::: name [attrs]` fenced div. `name` is the primary class; trailing
-    /// `.class`/`#id`/`key=value` go on the same element. Nested fences produce
-    /// nested nodes (descendant structure, not stacked classes).
+    /// A `:::` fenced div. The `:::` header parses as an attribute group — a bare
+    /// word names the element (`attrs.element`), `.class` → role, plus `#id` /
+    /// `key=value` — the same grammar as a heading group; there is no implicit
+    /// primary-class "name". With no element bareword the block defaults to
+    /// `<div>`. Spec 003 owns element resolution. Nested fences produce nested
+    /// nodes (descendant structure, not stacked classes).
     FencedDiv {
-        name: String,
+        /// The header's parsed attributes: element bareword, classes, id, attrs.
         attrs: Attributes,
         fence_depth: u32,
         children: Vec<Node>,

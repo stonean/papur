@@ -45,10 +45,19 @@ pub struct RoleRef {
 /// Insertion-ordered, last-wins map for `key=value` attributes.
 pub type KeyValues = IndexMap<String, String>;
 
-/// One parsed `{.class #id key=value}` brace group. Every field is optional;
-/// an empty group (`{}`) parses to the [`Default`] value (a no-op).
+/// One parsed attribute group — the `{.class #id key=value}` brace grammar a
+/// heading or inline span uses, and (minus the braces) the `:::` fenced-div
+/// header. Every field is optional; an empty group (`{}`) parses to the
+/// [`Default`] value (a no-op).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attributes {
+    /// A bare word naming the element (`::: nav` → `element = Some("nav")`).
+    /// Meaningful only for the `:::` header, where the absence of a bareword
+    /// defaults the block to `<div>`; headings and inline spans carry their own
+    /// element and leave this unused. The first bare word wins. What the name
+    /// *resolves* to — a standard tag, a custom element, or a lint error — is
+    /// owned by spec 003; 002 only captures it.
+    pub element: Option<String>,
     /// `.class` tokens in source order, each a role reference.
     pub roles: Vec<RoleRef>,
     /// The `#id` token, if any. At most one is valid (`P021` otherwise).
@@ -60,7 +69,10 @@ pub struct Attributes {
 impl Attributes {
     /// Whether the group contributed nothing (the `{}` no-op case).
     pub fn is_empty(&self) -> bool {
-        self.roles.is_empty() && self.id.is_none() && self.attrs.is_empty()
+        self.element.is_none()
+            && self.roles.is_empty()
+            && self.id.is_none()
+            && self.attrs.is_empty()
     }
 }
 
@@ -287,8 +299,12 @@ fn classify_token(
         return;
     }
 
-    // A bare token with no `.`/`#`/`=` is not valid attribute syntax.
-    push_malformed(mode, diags, span);
+    // A bare token with no `.`/`#`/`=` names the element (`::: nav`). The first
+    // one wins; element resolution and any multiple-element diagnostic are spec
+    // 003's concern, so capturing the bareword here is never an error.
+    if attrs.element.is_none() {
+        attrs.element = Some(token.to_string());
+    }
 }
 
 /// Parse a `.foo` / `g.foo` / `l.foo` class token into a [`RoleRef`]. Returns
@@ -462,9 +478,28 @@ mod tests {
     }
 
     #[test]
-    fn bare_token_strict_is_p022() {
-        let (_, diags) = strict("foo");
-        assert_eq!(codes(&diags), vec!["PAPUR-P022"]);
+    fn bare_word_names_the_element() {
+        let (attrs, diags) = strict("nav");
+        assert!(diags.is_empty());
+        assert_eq!(attrs.element.as_deref(), Some("nav"));
+    }
+
+    #[test]
+    fn first_bare_word_wins() {
+        let (attrs, diags) = strict("nav header");
+        assert!(diags.is_empty());
+        assert_eq!(attrs.element.as_deref(), Some("nav"));
+    }
+
+    #[test]
+    fn element_with_class_id_and_pair() {
+        // The `:::`-header grammar (minus braces): bare word → element.
+        let (attrs, diags) = strict("nav .site #top cols=2");
+        assert!(diags.is_empty());
+        assert_eq!(attrs.element.as_deref(), Some("nav"));
+        assert_eq!(attrs.roles[0].name, "site");
+        assert_eq!(attrs.id.as_deref(), Some("top"));
+        assert_eq!(attrs.attrs.get("cols").map(String::as_str), Some("2"));
     }
 
     #[test]

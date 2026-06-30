@@ -276,14 +276,14 @@ fn ac5_post_text_heading_scope() {
 fn ac6_nested_fenced_divs() {
     let (tree, diags) = parse_structure("::: outer\n::: inner\nx\n:::\n:::", ParseMode::Strict);
     assert!(diags.is_empty());
-    let Node::FencedDiv { name, children, .. } = &tree.nodes[0] else {
+    let Node::FencedDiv { attrs, children, .. } = &tree.nodes[0] else {
         panic!("expected fenced div");
     };
-    assert_eq!(name, "outer");
+    assert_eq!(attrs.element.as_deref(), Some("outer"));
     assert!(
         children
             .iter()
-            .any(|n| matches!(n, Node::FencedDiv { name, .. } if name == "inner"))
+            .any(|n| matches!(n, Node::FencedDiv { attrs, .. } if attrs.element.as_deref() == Some("inner")))
     );
 }
 
@@ -324,10 +324,10 @@ fn ac8_inner_fence_preserves_outer_scope() {
         ParseMode::Strict,
     );
     assert!(diags.is_empty());
-    let Node::FencedDiv { name, children, .. } = &tree.nodes[0] else {
+    let Node::FencedDiv { attrs, children, .. } = &tree.nodes[0] else {
         panic!("expected grid");
     };
-    assert_eq!(name, "grid");
+    assert_eq!(attrs.element.as_deref(), Some("grid"));
     let Node::Heading {
         opens_scope: true,
         children: sec,
@@ -339,7 +339,7 @@ fn ac8_inner_fence_preserves_outer_scope() {
     // The section still holds the inner fence and the content after it.
     assert!(
         sec.iter()
-            .any(|n| matches!(n, Node::FencedDiv { name, .. } if name == "inner"))
+            .any(|n| matches!(n, Node::FencedDiv { attrs, .. } if attrs.element.as_deref() == Some("inner")))
     );
     assert!(
         sec.iter()
@@ -408,17 +408,29 @@ fn ac11_forced_miss_and_auto_unresolved() {
     assert!(diag.is_none());
 }
 
-/// AC12 — a fenced div's name is its class; trailing attrs apply to it.
+/// AC12 — a `:::` header parses as an attribute group: a bare word names the
+/// element, `.class` adds a class, `#id`/`key=value` apply to the element; there
+/// is no implicit primary-class name. `::: .grid cols=3` → class `grid` +
+/// `data-cols` (default `<div>`); `::: nav .site` → element `nav` + class `site`.
+/// Element resolution is owned by spec 003.
 #[test]
-fn ac12_fenced_div_attributes() {
-    let (tree, _) = parse_structure("::: hero .fancy #top cols=2\n:::", ParseMode::Strict);
-    let Node::FencedDiv { name, attrs, .. } = &tree.nodes[0] else {
+fn ac12_fence_header_attribute_group() {
+    let (tree, diags) = parse_structure("::: .grid cols=3\n:::", ParseMode::Strict);
+    assert!(diags.is_empty());
+    let Node::FencedDiv { attrs, .. } = &tree.nodes[0] else {
         panic!("expected fenced div");
     };
-    assert_eq!(name, "hero");
-    assert_eq!(attrs.roles[0].name, "fancy");
-    assert_eq!(attrs.id.as_deref(), Some("top"));
-    assert_eq!(attrs.attrs.get("cols").map(String::as_str), Some("2"));
+    assert_eq!(attrs.element, None, "no bare word → default <div>, no class name");
+    assert_eq!(attrs.roles[0].name, "grid");
+    assert_eq!(attrs.roles[0].namespace, Namespace::Auto);
+    assert_eq!(attrs.attrs.get("cols").map(String::as_str), Some("3"));
+
+    let (tree, _) = parse_structure("::: nav .site\n:::", ParseMode::Strict);
+    let Node::FencedDiv { attrs, .. } = &tree.nodes[0] else {
+        panic!("expected fenced div");
+    };
+    assert_eq!(attrs.element.as_deref(), Some("nav"));
+    assert_eq!(attrs.roles[0].name, "site");
 }
 
 /// AC13 — degenerate groups: `{}` no-op, `{#a #b}` P021, `{=value}` P022.
@@ -446,11 +458,11 @@ fn nesting_example_structure_snapshot() {
     insta::assert_debug_snapshot!(tree);
 }
 
-const NESTING_EXAMPLE: &str = "::: grid cols=3
+const NESTING_EXAMPLE: &str = "::: .grid cols=3
 ### Fast {.carda}
 Content.
 
-  ::: grid cols=2
+  ::: .grid cols=2
   Still in .carda.
 
   #### Smaller {.card1}

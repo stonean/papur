@@ -50,3 +50,10 @@ Tasks derived from the [plan](plan.md). Complete in order.
 
 - [x] Add one test per acceptance criterion in `crates/papur-core/tests/acceptance.rs`, pinning structured output with `insta` snapshots.
 - [x] **Done when:** every acceptance criterion has a passing test, `cargo test` is green, and `npx markdownlint-cli2` passes on the feature directory.
+
+## 9. `:::` header is an attribute group (reopened — grammar change, cross-spec with 003)
+
+- [x] Document the grammar in the spec and data model: the `:::` header parses as an attribute group (bare word → element, `.class` → class), replacing the implicit primary-class "name"; examples updated to dotted classes (`::: .grid`).
+- [x] `parse_fence_header` parses the whole header via `parse_attributes` (no special first-token "name"); `FencedDiv` carries `Attributes` instead of a `name` field; update the fenced-div tests (`::: .grid cols=3` → `<div class="grid" data-cols="3">`, `::: nav` → `<nav>`).
+- [x] Element resolution (bare word → element, defaults, diagnostics) is delivered by spec 003 (semantic elements).
+- [ ] **Done when:** the `:::` grammar matches the heading attribute grammar, tests pass, and `/papur:review` re-runs against the changed code before this spec returns to `done`.
