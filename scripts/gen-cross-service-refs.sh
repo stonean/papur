@@ -4,8 +4,10 @@
 #
 # Walks tracked specs/NNN-*/spec.md (and spec-and-plan.md), finds inline
 # markdown links whose href is an absolute http(s) URL pointing at another
-# govern project's spec (a `/specs/NNN-slug/` path), outside fenced code
-# blocks, outside blockquote-prefixed lines, and outside any `## See also`
+# govern project's spec (a `/<spec-root>/NNN-slug/spec.md` path, where the
+# <spec-root> segment is the referenced service's own spec-root name — see
+# "Root-aware matching" below), outside fenced code blocks, outside
+# blockquote-prefixed lines, and outside any `## See also`
 # section (the same navigational opt-out gen-spec-deps.sh honors). Each such
 # link is harvested into the derived `references:` frontmatter index, keyed
 # {service, spec}:
@@ -16,6 +18,18 @@
 #               against `.govern.toml` [services]. A matched repo records the
 #               service alias; an unmatched repo records `service: null` (the
 #               `unregistered` outcome, surfaced later at resolution time).
+#
+# Root-aware matching (scenario referenced-service-spec-root). The <spec-root>
+# segment is NOT hardcoded to `specs`: a referenced service may rename its own
+# spec root (spec 040). Two tiers, decided per registered service:
+#   * Checkout reachable — the service is registered in [services] and its
+#     local `path` resolves; the matcher reads that checkout's own .govern.toml
+#     [paths] specs-root (default `specs`) and accepts only that exact segment.
+#   * Checkout unreachable — a registered service that is not checked out, or
+#     an unregistered repo, has an unknowable root, so the matcher accepts any
+#     single [A-Za-z0-9_-] segment (the `/spec.md` anchor keeps an owner/repo
+#     pair that looks like NNN-slug from false-matching). The reference is
+#     still harvested, so it never silently drops from the index.
 #
 # The branch ref is never part of identity, so two links differing only in
 # branch resolve to the same reference. `references:` is absent-when-empty:
@@ -54,64 +68,80 @@ done
 
 shopt -s nullglob
 
-# Enumerate feature-spec files, scoped to the git index (tracked + staged)
-# rather than a worktree glob, so untracked in-progress drafts are never
-# rewritten (mirrors gen-spec-deps.sh / spec 017 tracked-specs-not-worktree).
-# Falls back to a worktree glob only outside a git repo.
-list_specs() {
-  if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$ROOT" ls-files -- specs \
-      | { grep -E '^specs/[0-9][0-9][0-9]-[^/]+/(spec|spec-and-plan)\.md$' || true; } \
-      | while IFS= read -r rel; do printf '%s/%s\n' "$ROOT" "$rel"; done
-  else
-    local f
-    for f in "$ROOT"/specs/[0-9][0-9][0-9]-*/spec.md "$ROOT"/specs/[0-9][0-9][0-9]-*/spec-and-plan.md; do
-      [ -e "$f" ] && printf '%s\n' "$f"
-    done
-  fi
-}
+# Resolve the spec-root directory name (spec 040), shared with gen-spec-deps.sh
+# via a sourced helper — one definition, no drift (040 review). This resolves
+# THIS repo's spec root for enumeration. The cross-service URL matcher below is
+# root-aware too, but resolves the *referenced* service's root from its own
+# checkout (or accepts any segment when unknowable) — see "Root-aware matching"
+# in the header and the registry build below.
+# shellcheck source=lib/specs-root.sh
+. "$(dirname "$0")/lib/specs-root.sh"
+SPECS_ROOT="$(resolve_specs_root)"
 
-# Feature-spec files staged in the git index for the pending commit. Used by
-# --staged (the adopter pre-commit path) to restrict the rewrite set to specs
-# that are actually part of this commit, so committing one spec never rewrites
-# the derived `references:` of unrelated specs. Empty outside a git repo — each
-# spec's `references:` is a pure function of its own body, so there is no
-# cross-spec graph that would need the full set (unlike gen-spec-deps.sh).
-staged_specs() {
-  git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
-  git -C "$ROOT" diff --cached --name-only -- specs \
-    | { grep -E '^specs/[0-9][0-9][0-9]-[^/]+/(spec|spec-and-plan)\.md$' || true; } \
-    | while IFS= read -r rel; do printf '%s/%s\n' "$ROOT" "$rel"; done
-}
+# list_specs / staged_specs come from lib/specs-root.sh (sourced above). Each
+# spec's `references:` is a pure function of its own body, so --staged needs
+# only the staged set — there is no cross-spec graph (unlike gen-spec-deps.sh,
+# whose cycle check spans the full list).
 
 # The set of specs to rewrite: only the staged ones under --staged, else all.
 enumerate_specs() {
   if [ "$staged_only" -eq 1 ]; then staged_specs; else list_specs; fi
 }
 
-# Parse .govern.toml [services] into "alias<TAB>normalized-repo" records. A
-# missing file or absent [services] table yields an empty registry (every
-# reference then resolves to `unregistered`).
+# Parse .govern.toml [services] into "normalized-repo<TAB>alias<TAB>root"
+# records — the registry the harvest matcher consults. A missing file or absent
+# [services] table yields an empty registry (every reference then resolves to
+# `unregistered`).
+#
+# `root` is each service's resolved spec-root name: when its local checkout is
+# reachable, read from that checkout's own .govern.toml (default `specs`); when
+# the service is not checked out, left empty — the tier where the matcher
+# accepts any spec-root segment (scenario referenced-service-spec-root, Q1). The
+# two-step parse — awk extracts alias/repo/path, then bash resolves the
+# per-service root — keeps the filesystem probe out of awk.
 reg_file="$(mktemp)"
-trap 'rm -f "$reg_file"' EXIT
+svc_raw=""
+trap 'rm -f "$reg_file" "$svc_raw"' EXIT
 if [ -f "$ROOT/.govern.toml" ]; then
+  svc_raw="$(mktemp)"
   awk '
     function norm(v) { sub(/\/+$/, "", v); sub(/\.git$/, "", v); return v }
+    function unq(v) {
+      sub(/^[^=]*=[[:space:]]*/, "", v)
+      if (substr(v, 1, 1) == "\"") { v = substr(v, 2); sub(/".*$/, "", v) }
+      else { sub(/[[:space:]].*$/, "", v) }
+      return v
+    }
+    function flush() { if (cur != "" && repo != "") print cur "\t" norm(repo) "\t" path }
     /^\[services\.[^]]+\][[:space:]]*$/ {
+      flush()
       alias = $0
       sub(/^\[services\./, "", alias); sub(/\][[:space:]]*$/, "", alias)
       gsub(/^"|"$/, "", alias)
-      in_svc = 1; cur = alias; next
+      cur = alias; repo = ""; path = ""; in_svc = 1; next
     }
-    /^\[/ { in_svc = 0; next }
-    in_svc && /^[[:space:]]*repo[[:space:]]*=/ {
-      v = $0
-      sub(/^[[:space:]]*repo[[:space:]]*=[[:space:]]*/, "", v)
-      if (substr(v, 1, 1) == "\"") { v = substr(v, 2); sub(/".*$/, "", v) }
-      else { sub(/[[:space:]].*$/, "", v) }
-      if (v != "") print cur "\t" norm(v)
-    }
-  ' "$ROOT/.govern.toml" > "$reg_file"
+    /^\[/ { flush(); cur = ""; repo = ""; path = ""; in_svc = 0; next }
+    in_svc && /^[[:space:]]*repo[[:space:]]*=/ { repo = unq($0); next }
+    in_svc && /^[[:space:]]*path[[:space:]]*=/ { path = unq($0); next }
+    END { flush() }
+  ' "$ROOT/.govern.toml" > "$svc_raw"
+
+  # Resolve each service's spec-root from its local checkout when reachable;
+  # otherwise leave it empty (the not-checked-out / permissive tier). `path`
+  # is relative to the repo root or absolute (030 plan, D1).
+  while IFS=$'\t' read -r alias repo path; do
+    [ -n "$repo" ] || continue
+    root=""
+    if [ -n "$path" ]; then
+      case "$path" in
+        /*) checkout="$path" ;;
+        *)  checkout="$ROOT/$path" ;;
+      esac
+      [ -d "$checkout" ] && root="$(specs_root_of "$checkout/.govern.toml")"
+    fi
+    printf '%s\t%s\t%s\n' "$repo" "$alias" "$root" >> "$reg_file"
+  done < "$svc_raw"
+  rm -f "$svc_raw"
 fi
 
 # Harvest (service<TAB>spec) records — sorted, deduped — from one spec body.
@@ -127,9 +157,22 @@ harvest() {
       return b
     }
     BEGIN {
+      # Registry lines are "repo<TAB>alias<TAB>root" (root empty when the
+      # service is not checked out). reg_alias keys the registered repos;
+      # reg_root[repo] is the resolved spec-root, or "" for the permissive tier.
       while ((getline line < REG) > 0) {
-        t = index(line, "\t")
-        if (t > 0) reg[substr(line, t + 1)] = substr(line, 1, t - 1)
+        t1 = index(line, "\t")
+        if (t1 == 0) continue
+        repo = substr(line, 1, t1 - 1)
+        rest = substr(line, t1 + 1)
+        t2 = index(rest, "\t")
+        if (t2 > 0) {
+          reg_alias[repo] = substr(rest, 1, t2 - 1)
+          reg_root[repo] = substr(rest, t2 + 1)
+        } else {
+          reg_alias[repo] = rest
+          reg_root[repo] = ""
+        }
       }
       close(REG)
       fm_seen = 0; in_fm = 0; in_fence = 0; in_see_also = 0; n = 0
@@ -165,12 +208,25 @@ harvest() {
         m = substr(line, RSTART, RLENGTH)
         line = substr(line, RSTART + RLENGTH)
         url = substr(m, 3, length(m) - 3)
-        if (match(url, /\/specs\/[0-9][0-9][0-9]-[a-z0-9-]+\//)) {
+        # Candidate spec link: a single well-formed path segment (the referenced
+        # service spec-root name) immediately before an NNN-slug spec dir and
+        # its spec(-and-plan).md file. The leading segment is a wildcard so a
+        # renamed referenced root still matches; the /spec.md anchor keeps an
+        # owner/repo pair that looks like NNN-slug from false-matching.
+        if (match(url, /\/[A-Za-z0-9_-]+\/[0-9][0-9][0-9]-[a-z0-9-]+\/spec(-and-plan)?\.md/)) {
           seg = substr(url, RSTART, RLENGTH)
           before = substr(url, 1, RSTART - 1)
-          slug = seg; sub(/^\/specs\//, "", slug); sub(/\/$/, "", slug)
+          root_seg = seg; sub(/^\//, "", root_seg); sub(/\/.*$/, "", root_seg)
+          slug = seg; sub(/^\/[A-Za-z0-9_-]+\//, "", slug); sub(/\/spec(-and-plan)?\.md$/, "", slug)
           repo = norm(strip_ref(before))
-          svc = (repo in reg) ? reg[repo] : ""
+          if (repo in reg_alias) {
+            svc = reg_alias[repo]
+            # Checkout reachable (root known): accept only the real resolved
+            # spec-root segment. Not checked out (root ""): accept any segment.
+            if (reg_root[repo] != "" && root_seg != reg_root[repo]) continue
+          } else {
+            svc = ""    # unregistered: spec-root unknowable, accept any segment
+          }
           key = slug SUBSEP svc
           if (!(key in seen)) { seen[key] = 1; n++; ks[n] = slug; vs[n] = svc }
         }
