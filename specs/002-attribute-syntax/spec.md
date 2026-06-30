@@ -2,8 +2,8 @@
 status: done
 dependencies: [001-file-format]
 review:
-  last-run: 2026-06-29T02:42:39Z
-  reviewed-against: 5fecc8b528bd6c0d334817776e2c75a94ef55af7
+  last-run: 2026-06-30T00:33:17Z
+  reviewed-against: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
   must-violations: 0
   should-violations: 0
   low-confidence: 0

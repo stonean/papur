@@ -658,32 +658,49 @@ enum InlineSeg<'a> {
 }
 
 /// Split a run into text and `[text]{attrs}` inline-span segments.
+///
+/// Linear in the run length: each candidate `[` consults [`try_inline`] once,
+/// and on a non-match scanning resumes just past the `]` that was examined.
+/// Every `[` before that `]` shares it and would fail identically, so the
+/// `]`-search never revisits a byte (avoiding an O(n^2) rescan); a `[` with no
+/// following `]` ends the search outright.
 fn split_inline(run: &str) -> Vec<InlineSeg<'_>> {
     let mut segs = Vec::new();
     let bytes = run.as_bytes();
     let mut i = 0;
     let mut text_start = 0;
     while i < bytes.len() {
-        if bytes[i] == b'['
-            && let Some((text, group_start, attrs, end)) = try_inline(run, i)
-        {
-            if i > text_start {
-                segs.push(InlineSeg::Text {
-                    start: text_start,
-                    text: &run[text_start..i],
-                });
-            }
-            segs.push(InlineSeg::Span {
-                start: i,
+        if bytes[i] != b'[' {
+            i += 1;
+            continue;
+        }
+        match try_inline(run, i) {
+            InlineMatch::Span {
                 text,
                 group_start,
                 attrs,
-            });
-            i = end;
-            text_start = end;
-            continue;
+                end,
+            } => {
+                if i > text_start {
+                    segs.push(InlineSeg::Text {
+                        start: text_start,
+                        text: &run[text_start..i],
+                    });
+                }
+                segs.push(InlineSeg::Span {
+                    start: i,
+                    text,
+                    group_start,
+                    attrs,
+                });
+                i = end;
+                text_start = end;
+            }
+            // No `]` follows, so no span can start at `i` or any later `[`.
+            InlineMatch::NoClose => break,
+            // A `]` was found but no `{…}` group followed; resume past it.
+            InlineMatch::NoMatch { resume } => i = resume,
         }
-        i += 1;
     }
     if text_start < run.len() {
         segs.push(InlineSeg::Text {
@@ -694,22 +711,49 @@ fn split_inline(run: &str) -> Vec<InlineSeg<'_>> {
     segs
 }
 
-/// Try to read a `[text]{attrs}` inline span at the `[` at byte `lb`. Returns
-/// the label, the attr group's start offset, the attr text, and the byte index
-/// just past the closing `}`.
-fn try_inline(run: &str, lb: usize) -> Option<(&str, usize, &str, usize)> {
+/// The outcome of attempting to read a `[text]{attrs}` inline span at a `[`.
+enum InlineMatch<'a> {
+    /// A complete span: the label, the attr group's start offset, the attr
+    /// text, and the byte index just past the closing `}`.
+    Span {
+        text: &'a str,
+        group_start: usize,
+        attrs: &'a str,
+        end: usize,
+    },
+    /// No `]` follows the `[` — no inline span can start here or later.
+    NoClose,
+    /// A `]` was found but no valid `{…}` group followed. `resume` is the byte
+    /// just past that `]`; every `[` between the candidate and `resume` shares
+    /// the same `]` and fails identically, so scanning continues from there.
+    NoMatch { resume: usize },
+}
+
+/// Try to read a `[text]{attrs}` inline span at the `[` at byte `lb`.
+fn try_inline(run: &str, lb: usize) -> InlineMatch<'_> {
     let after = &run[lb + 1..];
-    let rb = lb + 1 + after.find(']')?;
+    let Some(rel) = after.find(']') else {
+        return InlineMatch::NoClose;
+    };
+    let rb = lb + 1 + rel;
     let label = &run[lb + 1..rb];
     let rest = &run[rb + 1..];
+    let resume = rb + 1;
     if !rest.starts_with('{') {
-        return None;
+        return InlineMatch::NoMatch { resume };
     }
-    let close = rest.find('}')?;
+    let Some(close) = rest.find('}') else {
+        return InlineMatch::NoMatch { resume };
+    };
     let attrs = &rest[1..close];
     let group_start = rb + 2;
     let end = rb + 1 + close + 1;
-    Some((label, group_start, attrs, end))
+    InlineMatch::Span {
+        text: label,
+        group_start,
+        attrs,
+        end,
+    }
 }
 
 /// A line of source with its byte offsets, the trailing newline excluded.
@@ -952,6 +996,31 @@ mod tests {
             .expect("inline span present");
         assert_eq!(span.0, "here");
         assert_eq!(span.1.roles[0].name, "btn");
+    }
+
+    #[test]
+    fn bracket_runs_stay_prose_and_later_span_still_matches() {
+        // Unmatched `[` runs (the former O(n^2) path) stay prose, and a valid
+        // span after a bracket-with-no-group is still recognized.
+        let (tree, diags) = parse("[[[[ no closer here");
+        assert!(diags.is_empty());
+        assert_eq!(tree.nodes.len(), 1);
+        assert!(matches!(&tree.nodes[0], Node::Prose { text, .. } if text == "[[[[ no closer here"));
+
+        let (tree, diags) = parse("see [a] then [here]{.btn}");
+        assert!(diags.is_empty());
+        let span = tree
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::InlineSpan { text, attrs, .. } => Some((text.clone(), attrs.clone())),
+                _ => None,
+            })
+            .expect("inline span present");
+        assert_eq!(span.0, "here");
+        assert_eq!(span.1.roles[0].name, "btn");
+        // The `[a]` (no attribute group) stays prose, not a span.
+        assert!(prose_contains(&tree.nodes, "[a]"));
     }
 
     #[test]

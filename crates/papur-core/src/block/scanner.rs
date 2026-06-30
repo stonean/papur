@@ -111,6 +111,11 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
     let mut pending: Option<(usize, u32)> = None;
 
     let mut i = 0usize;
+    // Once a reserved opener scans to EOF with no close, no later line can have
+    // one either (each subsequent opener searches a suffix of the same range).
+    // Latching that fact lets later openers skip the rescan, keeping the
+    // unterminated-fence path linear instead of O(n^2).
+    let mut closes_exhausted = false;
 
     // Leading YAML frontmatter (`---` … `---`) becomes an implicit `::: meta`
     // block. A non-leading `---` is an ordinary Markdown thematic break, left to
@@ -159,13 +164,24 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
             continue;
         };
 
-        // a reserved opener — scan forward for its closing `:::`
-        let mut j = i + 1;
-        while j < n && !is_close(lines[j].text) {
-            j += 1;
-        }
+        // a reserved opener — scan forward for its closing `:::`, unless an
+        // earlier opener already proved no close remains in the source.
+        let close_idx = if closes_exhausted {
+            None
+        } else {
+            let mut j = i + 1;
+            while j < n && !is_close(lines[j].text) {
+                j += 1;
+            }
+            if j < n {
+                Some(j)
+            } else {
+                closes_exhausted = true;
+                None
+            }
+        };
 
-        if j >= n {
+        let Some(j) = close_idx else {
             // unterminated fence
             if matches!(mode, ParseMode::Strict) {
                 diags.push(Diagnostic::new(
@@ -183,7 +199,7 @@ pub(super) fn scan(source: &str, mode: ParseMode) -> (Vec<Block>, Vec<Diagnostic
             pending.get_or_insert((line.start, line.num));
             i += 1;
             continue;
-        }
+        };
 
         // a well-formed layer block: flush content before it, then emit it
         flush_content(source, &mut pending, line.start, &mut blocks);
@@ -313,6 +329,20 @@ mod tests {
         assert_eq!(err.len(), 1);
         assert_eq!(err[0].code.code(), "PAPUR-P001");
         assert_eq!(err[0].span.start_line, 3);
+    }
+
+    #[test]
+    fn many_unterminated_fences_each_report_once() {
+        // The closes-exhausted short-circuit must not drop diagnostics: every
+        // unterminated reserved opener still reports its own P001.
+        let src = "::: css\n::: meta\n::: script\n"; // three openers, no closers
+        let err = segment(src, ParseMode::Strict).unwrap_err();
+        assert_eq!(err.len(), 3);
+        assert!(err.iter().all(|d| d.code.code() == "PAPUR-P001"));
+        assert_eq!(
+            err.iter().map(|d| d.span.start_line).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
     }
 
     #[test]
