@@ -49,7 +49,7 @@ The dispatch architecture, target-qualified content (`::: @web` blocks, `@pdf` q
 
 - **Accessibility** ([014-accessibility](014-accessibility/spec.md)) — strict-mode lint rules, bundled accessible patterns, and auto-emitted defaults that every target emitter respects.
 - **Attribute syntax** ([002-attribute-syntax](002-attribute-syntax/spec.md)) — the role grammar all three layers share.
-- **Semantic element registry** ([003-semantic-elements](003-semantic-elements/spec.md)) — the canonical mapping from role keywords to HTML elements.
+- **Semantic element registry** ([003-semantic-elements](003-semantic-elements/spec.md)) — how a roled scope selects its wrapper element: a bareword names it (the `:::` fence name, or a heading brace-group token), otherwise it defaults by scope type (`<section>` for a heading scope, `<div>` for a fenced div).
 
 ## Open Questions
 
