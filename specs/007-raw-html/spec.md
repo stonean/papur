@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 6
 ---
 
 # 007 — Raw HTML
@@ -46,11 +47,11 @@ The qualified form is rare; most raw HTML belongs to the web target only. Even o
 
 ## Acceptance Criteria
 
-- [ ] A `::: html` block emits its contents verbatim on the web target.
-- [ ] A `::: html` block is omitted from pdf, email, and plain targets by default.
-- [ ] Inline raw HTML in a paragraph (e.g. `Press <kbd>Esc</kbd>`) is preserved on the web target.
-- [ ] A target-qualified `::: @pdf html` block is acknowledged by the pdf target (emission rules for raw HTML in the pdf target are owned by the pdf target spec — see below).
-- [ ] Raw HTML inside a `::: html` block is not re-parsed as papur content — papur-style attribute syntax inside the block is not interpreted.
+- [ ] AC1: A `::: html` block emits its contents verbatim on the web target.
+- [ ] AC2: A `::: html` block is omitted from pdf, email, and plain targets by default.
+- [ ] AC3: Inline raw HTML in a paragraph (e.g. `Press <kbd>Esc</kbd>`) is preserved on the web target.
+- [ ] AC4: A target-qualified `::: @pdf html` block is acknowledged by the pdf target (emission rules for raw HTML in the pdf target are owned by the pdf target spec — see below).
+- [ ] AC5: Raw HTML inside a `::: html` block is not re-parsed as papur content — papur-style attribute syntax inside the block is not interpreted.
 
 ## See also
 

@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 8
 ---
 
 # 005 — CSS Layer
@@ -84,13 +85,13 @@ Accessibility qualifiers expose user-preference media queries with first-class s
 
 ## Acceptance Criteria
 
-- [ ] A `.btn` rule with `padding: $space.sm $space.md` emits the resolved theme values per target (var() on web, inlined elsewhere).
-- [ ] Nested `&.primary` produces `.btn.primary` in the compiled output.
-- [ ] `@web` blocks emit only on the web target; `@pdf` blocks emit only on the pdf target; `@email` blocks emit only on the email target.
-- [ ] `@reduced-motion` emits under `@media (prefers-reduced-motion: reduce)` on web.
-- [ ] Any role with a handler in `::: script` automatically gets a `:focus-visible` rule unless the author has written one explicitly.
-- [ ] Sass `&` parent selector chains correctly across multiple nesting levels.
-- [ ] Missing semicolons and missing braces are not parse errors (indentation is the syntactic structure).
+- [ ] AC1: A `.btn` rule with `padding: $space.sm $space.md` emits the resolved theme values per target (var() on web, inlined elsewhere).
+- [ ] AC2: Nested `&.primary` produces `.btn.primary` in the compiled output.
+- [ ] AC3: `@web` blocks emit only on the web target; `@pdf` blocks emit only on the pdf target; `@email` blocks emit only on the email target.
+- [ ] AC4: `@reduced-motion` emits under `@media (prefers-reduced-motion: reduce)` on web.
+- [ ] AC5: Any role with a handler in `::: script` automatically gets a `:focus-visible` rule unless the author has written one explicitly.
+- [ ] AC6: Sass `&` parent selector chains correctly across multiple nesting levels.
+- [ ] AC7: Missing semicolons and missing braces are not parse errors (indentation is the syntactic structure).
 
 ## Open Questions
 

@@ -78,7 +78,7 @@ radius.md: 0.5rem
 
 ## Project layout
 
-- [`constitution.md`](constitution.md) — Principles, pipeline, and quality standards from the `govern` framework.
+- [`.ductus/constitution.md`](.ductus/constitution.md) — Principles, pipeline, and quality standards from the `ductus` framework.
 - [`AGENTS.md`](AGENTS.md) — Agent rules: tech stack, conventions, workflow, gotchas, boundaries.
 - [`specs/`](specs/) — Numbered feature specs that compose the language design.
   - [`specs/system.md`](specs/system.md) — Compiler architecture (source → AST → per-target emitters).
@@ -86,7 +86,7 @@ radius.md: 0.5rem
 
 ## Development workflow
 
-This project uses the [govern](https://github.com/stonean/govern) framework for spec-driven development. Features move through the pipeline: **spec → plan → tasks → implement**. See [`constitution.md`](constitution.md) for the full lifecycle.
+This project uses the [govern](https://github.com/stonean/govern) framework for spec-driven development. Features move through the pipeline: **spec → plan → tasks → implement**. See [`.ductus/constitution.md`](.ductus/constitution.md) for the full lifecycle.
 
 ## License
 

@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 10
 ---
 
 # 016 — Language Specification
@@ -59,15 +60,15 @@ The design specs deliberately stop at design level. The formal spec MUST close e
 
 ## Acceptance Criteria
 
-- [ ] `spec/grammar.md` defines a complete EBNF (or equivalent) covering every fence type, role syntax, theme syntax, CSS subset, behavior DSL, and include directive.
-- [ ] `spec/ast.md` defines every AST node type with field types and structural invariants; the AST-shape open question in `system.md` is closed.
-- [ ] `spec/static-semantics.md` defines name resolution, namespace lookup, qualifier precedence, scope rules, and computed-token evaluation as algorithms.
-- [ ] `spec/dynamic-semantics.md` defines the emission rule for every AST node on every target (web, pdf, email, plain).
-- [ ] `spec/css-subset.md` enumerates the supported CSS / Sass feature set with per-target compatibility.
-- [ ] `spec/errors.md` lists every error condition with a stable code, message template, and severity.
-- [ ] `spec/conformance/` contains at least one passing test per acceptance criterion across specs 001–014.
-- [ ] Every open question in the design specs (001–015) is either resolved in the formal spec or explicitly carried forward as a known limitation in `spec/grammar.md`.
-- [ ] Two independent parser implementations following only the formal spec produce byte-identical output on the conformance corpus.
+- [ ] AC1: `spec/grammar.md` defines a complete EBNF (or equivalent) covering every fence type, role syntax, theme syntax, CSS subset, behavior DSL, and include directive.
+- [ ] AC2: `spec/ast.md` defines every AST node type with field types and structural invariants; the AST-shape open question in `system.md` is closed.
+- [ ] AC3: `spec/static-semantics.md` defines name resolution, namespace lookup, qualifier precedence, scope rules, and computed-token evaluation as algorithms.
+- [ ] AC4: `spec/dynamic-semantics.md` defines the emission rule for every AST node on every target (web, pdf, email, plain).
+- [ ] AC5: `spec/css-subset.md` enumerates the supported CSS / Sass feature set with per-target compatibility.
+- [ ] AC6: `spec/errors.md` lists every error condition with a stable code, message template, and severity.
+- [ ] AC7: `spec/conformance/` contains at least one passing test per acceptance criterion across specs 001–014.
+- [ ] AC8: Every open question in the design specs (001–015) is either resolved in the formal spec or explicitly carried forward as a known limitation in `spec/grammar.md`.
+- [ ] AC9: Two independent parser implementations following only the formal spec produce byte-identical output on the conformance corpus.
 
 ## Open Questions
 

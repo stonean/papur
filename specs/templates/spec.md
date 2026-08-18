@@ -27,7 +27,7 @@ review:
      in the body — do not edit it by hand.
 
      Cross-service references: to reference a spec in another service (its own
-     repo with its own govern install), write a normal inline markdown link to
+     repo with its own ductus install), write a normal inline markdown link to
      that spec's absolute canonical URL in the body — shaped like (backticks
      here only to keep this example from being harvested as a real reference):
      `[api 014-auth-tokens](https://github.com/acme/api/blob/main/specs/014-auth-tokens/spec.md)`.
@@ -40,6 +40,14 @@ review:
      Scenarios: when a spec section needs lower-level elaboration (edge cases, bug fixes,
      detailed behavior), run /papur:amend to record a scenario file under
      specs/{NNN-feature-name}/scenarios/.
+
+     Motivation, if you write one: put it in the past tense. A Motivation
+     describes the world BEFORE the feature, so every present-tense claim in it
+     ("the CLI has no way to X", "nothing validates Y") becomes false the moment
+     the spec ships — and unlike a broken link, nothing marks it stale. Write
+     "the CLI had no way to X" and it stays true forever. This is an authoring
+     convention rather than a check: detecting it needs tense analysis, which no
+     deterministic check carries.
 -->
 
 ## Acceptance Criteria

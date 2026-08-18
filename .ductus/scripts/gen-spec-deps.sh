@@ -23,7 +23,8 @@
 # Body inline links are authoritative; the frontmatter is a derived index.
 
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Two levels up: this script lives at <repo>/.ductus/scripts/ (specs 042, 049).
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 dry_run=0
 staged_only=0
@@ -74,6 +75,7 @@ is_write_target() {
 }
 
 changed=0
+unwritten=0
 while IFS= read -r spec; do
   [ -f "$spec" ] || continue
   own_slug="$(basename "$(dirname "$spec")")"
@@ -143,15 +145,26 @@ while IFS= read -r spec; do
     new_line="dependencies: [$(echo "$deps_csv" | sed 's/,/, /g')]"
   fi
 
-  # Replace the first `dependencies:` line that appears inside the frontmatter.
+  # Replace the first `dependencies:` entry inside the frontmatter — the key
+  # line *and* any indented continuation beneath it. Replacing only the key
+  # line is correct for the inline flow form this repo writes
+  # (`dependencies: [a, b]`) but corrupts the equally-valid block form:
+  #
+  #     dependencies:        ->   dependencies: []
+  #       - 000-stale                - 000-stale     <- orphaned, invalid YAML
+  #
+  # ...which the generator then reported as a successful `Updated`. The
+  # `skipping` idiom below is the one gen-cross-service-refs.sh already uses to
+  # splice `references:`; the two generators diverged on exactly this.
   tmp="$(mktemp)"
   awk -v new="$new_line" '
-    BEGIN { fm_seen = 0; in_fm = 0; replaced = 0 }
+    BEGIN { fm_seen = 0; in_fm = 0; replaced = 0; skipping = 0 }
     /^---[[:space:]]*$/ {
       if (!fm_seen) { in_fm = 1; fm_seen = 1; print; next }
-      if (in_fm)    { in_fm = 0; print; next }
+      if (in_fm)    { in_fm = 0; skipping = 0; print; next }
     }
-    in_fm && !replaced && /^dependencies:/ { print new; replaced = 1; next }
+    in_fm && skipping { if ($0 ~ /^[[:space:]]/) next; skipping = 0 }
+    in_fm && !replaced && /^dependencies:/ { print new; replaced = 1; skipping = 1; next }
     { print }
   ' "$spec" > "$tmp"
 
@@ -167,7 +180,12 @@ while IFS= read -r spec; do
   else
     # Either already in sync, or (under --staged) a non-staged spec whose
     # derived field has drifted — left untouched on disk; its edges still
-    # feed the cycle graph below from the worktree body.
+    # feed the cycle graph below from the worktree body. Count that second
+    # case: it was examined and found drifted, so reporting it as "in sync"
+    # would assert the opposite of what was observed.
+    if ! cmp -s "$spec" "$tmp"; then
+      unwritten=$((unwritten + 1))
+    fi
     rm "$tmp"
   fi
 
@@ -177,7 +195,7 @@ while IFS= read -r spec; do
 done < <(list_specs)
 
 if [ "$changed" -eq 0 ]; then
-  echo "No changes (all specs in sync)"
+  report_no_changes "$unwritten"
 fi
 
 # Cycle check: runs after the frontmatter rewrite so any diff is visible in the

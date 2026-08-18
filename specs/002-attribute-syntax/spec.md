@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 14
 ---
 
 # 002 — Attribute Syntax (Roles)
@@ -126,19 +127,19 @@ Fenced divs and roled headings both open scopes; the heading scope rule above go
 
 ## Acceptance Criteria
 
-- [x] `{.foo}` attaches `class="foo"` to the immediately preceding (or following) element per the position rule.
-- [x] `{#id}` attaches `id="id"`; duplicate ids in the same file are a lint error.
-- [x] `{key=value}` attaches `data-key="value"` for non-standard keys; recognized HTML attribute names (global or element-standard, per the WHATWG HTML standard) pass through verbatim.
-- [x] Pre-text role on a heading attaches to the heading element only.
-- [x] Post-text role on a heading opens a section scope; the scope closes per the heading scope rule.
-- [x] Nested fenced divs produce nested elements; descendant CSS selectors written against parent.child match the emitted structure.
-- [x] `g.foo` always resolves to a global role definition; `l.foo` always resolves to a local one; an unprefixed `.foo` resolves local-first then global.
-- [x] An inner fence does not close an outer heading scope opened in the parent fence.
-- [x] An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
-- [x] An inline attribute group `[text]{.foo}` attaches to the bracketed span it follows and never opens a scope; only headings carry the pre-text/post-text section-scope distinction.
-- [x] A forced namespace prefix that cannot be satisfied is a resolution error (strict: lint error; lenient: emit unresolved and warn); an unresolved unprefixed `.foo` is emitted verbatim and is not an error.
-- [ ] A `:::` header parses as an attribute group: a bare word names the element, a `.class` adds a class, and `#id`/`key=value` apply to the element. `::: .grid cols=3` → `<div class="grid" data-cols="3">`; `::: nav .site` → `<nav class="site">`. A class carries an explicit dot; there is no implicit primary-class name. Element resolution is owned by spec 003.
-- [x] Degenerate attribute groups behave per **Edge Cases**: `{}` is a no-op, `{#a #b}` is a lint error, `{=value}` is a strict-mode parse error and lenient-mode literal content.
+- [x] AC1: `{.foo}` attaches `class="foo"` to the immediately preceding (or following) element per the position rule.
+- [x] AC2: `{#id}` attaches `id="id"`; duplicate ids in the same file are a lint error.
+- [x] AC3: `{key=value}` attaches `data-key="value"` for non-standard keys; recognized HTML attribute names (global or element-standard, per the WHATWG HTML standard) pass through verbatim.
+- [x] AC4: Pre-text role on a heading attaches to the heading element only.
+- [x] AC5: Post-text role on a heading opens a section scope; the scope closes per the heading scope rule.
+- [x] AC6: Nested fenced divs produce nested elements; descendant CSS selectors written against parent.child match the emitted structure.
+- [x] AC7: `g.foo` always resolves to a global role definition; `l.foo` always resolves to a local one; an unprefixed `.foo` resolves local-first then global.
+- [x] AC8: An inner fence does not close an outer heading scope opened in the parent fence.
+- [x] AC9: An unbalanced or dangling `:::` content-fence marker is detected: in strict mode it is a parse error; in lenient mode it is treated as literal content. Because the fenced-div parser tracks fence depth, this is provable here — relocated from [001-file-format](../001-file-format/spec.md), whose block segmentation leaves content fences opaque and so cannot detect it.
+- [x] AC10: An inline attribute group `[text]{.foo}` attaches to the bracketed span it follows and never opens a scope; only headings carry the pre-text/post-text section-scope distinction.
+- [x] AC11: A forced namespace prefix that cannot be satisfied is a resolution error (strict: lint error; lenient: emit unresolved and warn); an unresolved unprefixed `.foo` is emitted verbatim and is not an error.
+- [ ] AC12: A `:::` header parses as an attribute group: a bare word names the element, a `.class` adds a class, and `#id`/`key=value` apply to the element. `::: .grid cols=3` → `<div class="grid" data-cols="3">`; `::: nav .site` → `<nav class="site">`. A class carries an explicit dot; there is no implicit primary-class name. Element resolution is owned by spec 003.
+- [x] AC13: Degenerate attribute groups behave per **Edge Cases**: `{}` is a no-op, `{#a #b}` is a lint error, `{=value}` is a strict-mode parse error and lenient-mode literal content.
 
 ## Edge Cases
 

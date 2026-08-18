@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 12
 ---
 
 # 003 — Semantic Element Registry
@@ -100,17 +101,17 @@ Three codes in a new `P030`–`P039` element-resolution range (registered in [`e
 
 ## Acceptance Criteria
 
-- [ ] A heading scope with no bare word emits `<section>`: `## Latest {.post}` → `<section class="post">`.
-- [ ] A fenced div with no bare word emits `<div>`: `::: .grid cols=3` → `<div class="grid" data-cols="3">`.
-- [ ] A bare word names the element at either position: `### Fast {nav .x}` → `<nav class="x">`; `::: nav .site` → `<nav class="site">`.
-- [ ] A class never selects the element: `### Fast {.nav}` → `<section class="nav">`, not `<nav>`.
-- [ ] A hyphenated bare word is a custom element: `::: recipe-card` → `<recipe-card>`; `### Pancakes {recipe-card .x}` → `<recipe-card class="x">`.
-- [ ] An invalid bare word (not a standard tag, not a valid custom name) is `PAPUR-P030` (strict error; lenient warning + scope default): `::: hero` → error (use `.hero`).
-- [ ] An element bare word in a pre-text/inline position, or a second bare word in one group, is `PAPUR-P031`; the heading keeps its native tag.
-- [ ] `div`/`span` downgrade a heading scope: `### Fast {div .card}` → `<div class="card">`.
-- [ ] An `as:` binding sets a role's element wherever it opens a scope: with `.post { as: article }`, both `## Latest {.post}` and `::: .post` emit `<article class="post">`.
-- [ ] Precedence holds: a use-site bare word overrides a binding (`{section .post}` → `<section class="post">`), and a binding overrides the scope default.
-- [ ] Two `as:`-bound roles on one scope: the first in source order wins and `PAPUR-P032` (warning) is emitted; never an error.
+- [ ] AC1: A heading scope with no bare word emits `<section>`: `## Latest {.post}` → `<section class="post">`.
+- [ ] AC2: A fenced div with no bare word emits `<div>`: `::: .grid cols=3` → `<div class="grid" data-cols="3">`.
+- [ ] AC3: A bare word names the element at either position: `### Fast {nav .x}` → `<nav class="x">`; `::: nav .site` → `<nav class="site">`.
+- [ ] AC4: A class never selects the element: `### Fast {.nav}` → `<section class="nav">`, not `<nav>`.
+- [ ] AC5: A hyphenated bare word is a custom element: `::: recipe-card` → `<recipe-card>`; `### Pancakes {recipe-card .x}` → `<recipe-card class="x">`.
+- [ ] AC6: An invalid bare word (not a standard tag, not a valid custom name) is `PAPUR-P030` (strict error; lenient warning + scope default): `::: hero` → error (use `.hero`).
+- [ ] AC7: An element bare word in a pre-text/inline position, or a second bare word in one group, is `PAPUR-P031`; the heading keeps its native tag.
+- [ ] AC8: `div`/`span` downgrade a heading scope: `### Fast {div .card}` → `<div class="card">`.
+- [ ] AC9: An `as:` binding sets a role's element wherever it opens a scope: with `.post { as: article }`, both `## Latest {.post}` and `::: .post` emit `<article class="post">`.
+- [ ] AC10: Precedence holds: a use-site bare word overrides a binding (`{section .post}` → `<section class="post">`), and a binding overrides the scope default.
+- [ ] AC11: Two `as:`-bound roles on one scope: the first in source order wins and `PAPUR-P032` (warning) is emitted; never an error.
 
 ## Resolved Questions
 

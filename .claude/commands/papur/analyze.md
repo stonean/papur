@@ -1,5 +1,5 @@
 ---
-description: Audit artifacts against each other — spec, plan, tasks, scenarios, frontmatter, dependencies, rule IDs. Read-only.
+description: Audit artifacts against each other — spec, plan, tasks, scenarios, frontmatter, dependencies, rule IDs. Read-only by default; --fix reverts a done spec drifted by review state or unresolved scenario questions.
 argument-hint: "[--all] [--fix] [feature]"
 parity:
   semantic-fields:
@@ -15,7 +15,7 @@ Audit a feature's artifacts against each other and against the framework's rule 
 
 ## Purpose
 
-Audit a feature's spec, plan, tasks, and data model for consistency. Read-only; reports issues without modifying files. Use this to catch problems before the next pipeline gate fires.
+Audit a feature's spec, plan, tasks, and data model for consistency. Read-only by default — reports issues without modifying files. Use this to catch problems before the next pipeline gate fires. The one exception is the `--fix` flag, which reverts a status-`done` spec back to `in-progress` on either of two triggers: a `review:` block drifted to blocking (see Review state drift), or unresolved open questions carried by the spec's scenarios (see Scenario open questions). Those reverts are the only writes this command performs, and neither is silent — each emits a notice naming the spec and what drifted.
 
 Renamed from `/validate` in spec 023 to align with the emerging spec-driven-development standard (GitHub Spec Kit uses `/analyze` for the same artifact-vs-artifact audit role). Complementary to `/papur:review`, which audits **code** against rules.
 
@@ -26,49 +26,59 @@ Parse `$ARGUMENTS` for flags and an optional feature identifier:
 - **Feature identifier** — a feature number, partial name, or full directory name. Overrides the session target.
 - **`--all`** — scan all feature directories under `specs/` instead of a single target. Report results grouped by feature.
 
-If `--all` is not present, use the feature identifier if provided, otherwise fall back to the session target from `.govern.session.toml`. If no target can be resolved, stop and tell the user to run `/papur:target` first or use `--all`.
+If `--all` is not present, use the feature identifier if provided, otherwise fall back to the session target from `.ductus/session.toml`. If no target can be resolved, stop and tell the user to run `/papur:target` first or use `--all`.
 
 ## Scope Boundaries
 
-- This is a read-only command. Do NOT modify any files.
-- Read only files within the target feature's directory, the cross-spec files needed for reference checks (`specs/system.md`, `specs/events.md`, `specs/errors.md`, dependency spec files), and the project's installed command-source frontmatter for the project-level consistency section below (`.claude/commands/papur/*.md` frontmatter only, plus `.claude/commands/govern.md` frontmatter for the bootstrap installer **if that file exists**). May invoke `scripts/gen-help-tables.sh --dry-run` and `scripts/gen-spec-deps.sh --dry-run` to surface generator drift. Do NOT read source code or test files.
-- Resolving the target spec's cross-service `references:` index additionally reads `.govern.toml` (the `[services]` registry) and the registered local checkouts' linked `spec.md` files — and nothing else; the canonical repo URL is **never fetched**. On the runtime path the host calls the resolve-references primitive per referencing spec; on the markdown-only path it reads those files with host file tools (see **Cross-service references** in the markdown-only reference below). This stays read-only.
-- Reference: §spec-requirements, §plan-phase, §tasks-phase, §readiness-check, §scenarios, §cross-spec-impact, §text-first-artifacts, §markdown-standards, §drift-prevention (constitution loaded by `/papur:target` — do not re-read). See [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md) for the reference semantics surfaced here.
+- Read-only by default — do NOT modify any files. The sole exception is `--fix`, which reverts a drifted `done` spec from `done` to `in-progress` via `set-status` on either trigger — review-state drift (see Review state drift below) or unresolved scenario open questions (see Scenario open questions below). Without `--fix`, no file is written.
+- Read only files within the target feature's directory, the cross-spec files needed for reference checks (`specs/system.md`, `specs/events.md`, `specs/errors.md`, dependency spec files), and the project's installed command-source frontmatter for the project-level consistency section below (`.claude/commands/papur/*.md` frontmatter only, plus `.claude/commands/ductus.md` frontmatter for the bootstrap installer **if that file exists**). May invoke `scripts/gen-help-tables.sh --dry-run` and `.ductus/scripts/gen-spec-deps.sh --dry-run` to surface generator drift, each only when that script exists in the project (`gen-help-tables.sh` is a ductus-repo-only generator and is absent from adopters). Do NOT read source code or test files.
+- Resolving the target spec's cross-service `references:` index additionally reads `.ductus/config.toml` (the `[services]` registry) and the registered local checkouts' linked `spec.md` files — and nothing else; the canonical repo URL is **never fetched**. On the runtime path the host calls the resolve-references primitive per referencing spec; on the markdown-only path it reads those files with host file tools (see **Cross-service references** in the markdown-only reference below). This stays read-only.
+- Reference: §spec-requirements, §grounding, §plan-phase, §tasks-phase, §readiness-check, §scenarios, §cross-spec-impact, §text-first-artifacts, §markdown-standards, §drift-prevention (constitution loaded by `/papur:target` — do not re-read). See [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md) for the reference semantics surfaced here.
 
 ## Instructions
 
-> **For agent runtimes**: backticked primitive names in this section map to MCP tools the optional [gvrn runtime](https://crates.io/crates/gvrn) exposes under bare `<primitive>` names (e.g., `read-spec`). Hosts wrap them with a server-name prefix taken from the agent's MCP registration (Claude: `mcp__gvrn__read-spec`; Auggie: `mcp:gvrn:read-spec`). When the server is registered for your session, **call the corresponding tool** for each step listed below — that is the deterministic path. If your host loads MCP tool schemas lazily (e.g., Claude Code lists tool names in a deferred-tool system reminder before exposing their schemas), the runtime is still registered: fetch the schema via the host's mechanism (`ToolSearch` on Claude Code) and call the tool — do not bail to the markdown-only fallback. When no `gvrn` MCP server is configured, walk the prose using the host's file-reading tool (e.g., `Read`) to produce the same result; do **not** substitute shell utilities (`awk`, `sed`, `grep` pipelines, `for` loops over files) for the prescribed file reads. The two paths share a contract; neither one wraps the other.
+> **For agent runtimes**: the Invoke steps below call the MCP tools of the ductus runtime; the host-integration contract — bare↔prefixed tool names, lazy ToolSearch schema fetch, the no-shell-utilities rule, and the two-paths guarantee — lives once in the constitution, §runtime-host-integration. Before the server is registered — the window between acquisition and the restart that loads it — walk the same prose using the host file-reading tools (Read, Edit, Write).
 
-1. Invoke `read-spec` (MCP: `read-spec`) against the targeted feature to load frontmatter, sections, and the open-question count from the body. The result drives subsequent steps' tier classification (status governs which artifact-completeness checks apply).
+1. Invoke `read-spec` (with `include-body`) against the targeted feature to load frontmatter, sections, and the open-question count from the body. The result drives subsequent steps' tier classification (status governs which artifact-completeness checks apply); its parsed `sections` also feed step 13's `## Applicable Rules` scan, so no separate re-read of the body is needed.
 
-2. Invoke `validate-frontmatter` (MCP: `validate-frontmatter`) against the spec path to check that the YAML block parses and that the required fields (status, dependencies) are present with valid values. Frontmatter findings are hard-fail tier; the rest of the procedure still runs to surface every issue in a single pass.
+2. Invoke `validate-frontmatter` against the spec path to check that the YAML block parses and that the required fields (status, dependencies) are present with valid values. `validate-frontmatter` emits each finding with `severity: blocking`; the host renders frontmatter findings in the report's hard-fail tier (the highest). The rest of the procedure still runs to surface every issue in a single pass.
 
-3. Invoke `traverse-deps` (MCP: `traverse-deps`) against the feature to verify each dependency directory exists, carries a compatible status, and that the reachable dep subgraph is acyclic. Missing dependencies are blocking; incompatible statuses are blocking when this spec is at clarified or later; any non-empty `cycles` entry — multi-node SCC or self-loop — is blocking. The cycle check is defense-in-depth that fires when the upstream `gen-spec-deps.sh` generator check (spec 017) was bypassed or stale frontmatter re-introduces an edge.
+3. Invoke `traverse-deps` against the feature to verify each dependency directory exists, carries a compatible status, and that the reachable dep subgraph is acyclic. Missing dependencies are blocking; an incompatible status (the edge's `compatible: false` — the dependency is below `planned`) is blocking when this spec is at `clarified` or later. `traverse-deps` reports per-edge `compatible` and `status` **unconditionally** (it never reads the consumer's own status), so apply that consumer-status conditioning host-side from the returned data rather than mapping the top-level `compatible` flag straight to a blocking finding. Any non-empty `cycles` entry — multi-node SCC or self-loop — is blocking. The cycle check is defense-in-depth that fires when the upstream `gen-spec-deps.sh` generator check (spec 017) was bypassed or stale frontmatter re-introduces an edge.
 
-4. Invoke `resolve-anchor` (MCP: `resolve-anchor`) against the spec path to confirm every section reference of the form `§<name>` resolves to a corresponding marker comment. Unresolved anchors are advisory — they usually indicate the constitution was renamed or restructured without updating callers. Otherwise, fall back to the markdown-only path.
+4. Invoke `resolve-anchor` against the spec path **with `markers-path` set to the constitution file** (`framework/constitution.md` in ductus's own repo; `.ductus/constitution.md` at the adopter repo root) to confirm every `§<name>` reference in the spec resolves to a `<!-- §name -->` marker in the constitution. The `markers-path` is essential: a spec carries no markers of its own, so resolving against the spec itself would flag *every* reference as unresolved; resolving against the constitution flags only a reference to a section that was renamed or restructured without updating callers. Unresolved anchors are advisory. With no ductus runtime, walk the markdown-only path.
 
-5. Invoke `check-rule-ids` (MCP: `check-rule-ids`) against the spec path with the project's rule files. Cited rule IDs that are missing are blocking; cited rule IDs marked deprecated are advisory. Otherwise, follow the markdown-only path.
+5. Invoke `check-rule-ids` against the spec path with the project's rule files. Cited rule IDs that are missing are blocking; cited rule IDs marked deprecated are advisory.
 
-6. Invoke `run-generator` (MCP: `run-generator`) against scripts/gen-spec-deps.sh to detect drift in the body inline links and frontmatter dependencies. A non-zero exit surfaces as an advisory drift finding — the pre-commit hook resolves these on the next commit. Otherwise, follow the markdown-only path.
+6. Invoke `run-generator` against .ductus/scripts/gen-spec-deps.sh to detect drift in the body inline links and frontmatter dependencies. A non-zero exit surfaces as an advisory drift finding — the pre-commit hook resolves these on the next commit.
 
-7. Invoke `lint-markdown` (MCP: `lint-markdown`) against the markdown files in the feature directory. Each returned violation is surfaced as an advisory finding. Otherwise, follow the markdown-only path.
+7. Invoke `lint-markdown` against the markdown files in the feature directory. Each returned violation is surfaced as an advisory finding.
 
-8. <!-- llm:assessSpecQuality --> For every loaded MUST-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. The host responds with a structured finding carrying severity, rule-id, location, and message. MUST-tier findings join the Blocking tier in the rendered report. Otherwise, fall back to the markdown-only path.
+8. Invoke `check-artifacts` against the feature to run the eight residual deterministic check families: artifact completeness per status tier (plan.md/tasks.md required at planned+ — the *conditional* data-model.md requirement is a semantic judgment and stays on the markdown-only path), task numbering and done-when consistency (the "tasks reference the plan" link is a semantic judgment and stays on the markdown-only path), scenario→task mapping (a spent task pruned per §tasks-phase never counts against its scenario, and the family is **skipped entirely on a `done` spec**, whose tasks may already be pruned), review-state drift on done specs, scenario open questions (blocking at `done`, advisory otherwise — no grandfather rule), link-adjacent decision drift (advisory — prose asserting an open state that its own sibling link's target contradicts), acceptance-criterion path existence (advisory — a filesystem path named in a `done` spec's acceptance criterion that no longer resolves), and acceptance-criterion labels (advisory — a duplicate `AC{n}` within one spec, a `next-criterion` that no longer exceeds the body, and an unlabelled criterion in a spec that carries a counter). Each returned finding carries its family, severity tier, and location. The result additionally carries a `skipped` list naming each target a family could not examine; render those in the Informational tier, never as findings — a zero-finding result must not read as assurance the primitive cannot give. The primitive mechanizes the **deterministic subset** of the markdown-only reference's Artifact completeness, Task consistency, Scenario consistency, Scenario open questions, Review state drift, Link-adjacent decision drift, Acceptance-criterion path existence, and Acceptance-criterion labels sections; the semantic items noted above (data-model necessity, tasks-reference-plan, and a scenario's own Context/Behavior sections) stay on the markdown-only path, as does Command-frontmatter completeness (Project-level consistency), which reads the host's command directory the runtime does not own.
 
-9. <!-- llm:assessSpecQuality --> For every loaded SHOULD-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. SHOULD-tier findings join the Advisory tier in the rendered report. Otherwise, fall back to the markdown-only path.
+9. Invoke `check-orphaned-references` to report adopter-owned files whose references to ductus-managed paths no longer resolve (advisory; §Project-level consistency). Runs once per invocation regardless of which feature is targeted — its subject is the project, not the spec — so with `--all` run it once, not per feature. Each finding names the referring file, the missing path, and the line. The result's `attribution` field governs the render and must not be flattened: `registry` means `framework/migrations.toml` was readable, and a finding's `migration` names the entry whose move most likely orphaned the reference (empty there means the registry *was* read and no entry claims that path); `watermark` means no registry was available to ask, so an empty `migration` means something different and `last-applied` is the only migration context there is. Rendering the two identically asserts an attribution nobody computed. Referrers that could not be read arrive in `skipped` and belong in the Informational tier, so an empty `findings` reads as clean only when `skipped` is empty; `examined` names the files the result actually describes. Report, never repair — the adopter may have hand-edited the reference, and a wrong rewrite is worse than a precise report. See 027's `migration-chain-reference-integrity` for the rule and `/papur`'s Pre-run Migrations for the second call site, where the registry is in hand.
 
-<!-- audit:ignore-promotion -->
-10. Resolve the target spec's cross-service **references** (deterministic; advisory). When the spec's derived `references:` index is non-empty, resolve each entry by the procedure in the **Cross-service references** section of the markdown-only reference below — the resolve-references primitive on the runtime path; host file tools (read `.govern.toml` and the linked checkout) on the markdown-only path. A **broken** outcome — the service is registered and its checkout reachable, but the target spec does not resolve (renamed, moved, deleted, or mistyped upstream, or a malformed URL) — is an **Advisory** finding, the cross-repo analog of a broken sibling link. The informational unknowns are **not** findings: **unregistered** (the repo matches no `[services]` entry — surface a pointer to `/papur:link` to register the service), **not checked out**, and **status unreadable** each record what could not be proven, without flagging a defect. Skip this step when the target spec declares no references.
+10. <!-- llm:assessSpecQuality --> For every loaded MUST-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. The host responds with a structured finding carrying severity, rule-id, location, and message. MUST-tier findings join the Blocking tier in the rendered report.
 
-<!-- audit:ignore-promotion -->
-11. Parse the spec body for a `## Applicable Rules` section and collect every rule ID cited there. For each cited ID that did **not** appear in the set of rules whose Verification triggers fired in steps 8 or 9, emit an advisory finding: `Applicable Rules citation does not fire: {rule-id} is listed under ## Applicable Rules, but the rule's Verification trigger did not fire against any spec artifact. Either remove the citation, or extend the spec to bring the cited surface into scope.` Skip this step when the spec has no `## Applicable Rules` section. Citations whose IDs do not resolve to any loaded rule are handled earlier in step 5 and not reprocessed here. See **Applicable Rules citation consistency** in the markdown-only reference for the full semantics and the promotion criterion that governs when this check graduates from advisory to blocking.
+11. <!-- llm:assessSpecQuality --> For every loaded SHOULD-tier rule whose Verification trigger fires against the spec, request a semantic assessment via the extension point. SHOULD-tier findings join the Advisory tier in the rendered report.
 
 <!-- audit:ignore-promotion -->
-12. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec whose review block has drifted to blocking — see the Review state drift section in the markdown-only reference below.
+12. Resolve the target spec's cross-service **references** (deterministic; advisory). When the spec's derived `references:` index is non-empty, resolve each entry by the procedure in the **Cross-service references** section of the markdown-only reference below — the resolve-references primitive on the runtime path; host file tools (read `.ductus/config.toml` and the linked checkout) on the markdown-only path. A **broken** outcome — the service is registered and its checkout reachable, but the target spec does not resolve (renamed, moved, deleted, or mistyped upstream, or a malformed URL) — is an **Advisory** finding, the cross-repo analog of a broken sibling link. The informational unknowns are **not** findings: **unregistered** (the repo matches no `[services]` entry — surface a pointer to `/papur:link` to register the service), **not checked out**, and **status unreadable** each record what could not be proven, without flagging a defect. Skip this step when the target spec declares no references.
+
+<!-- audit:ignore-promotion -->
+13. Parse the spec body for a `## Applicable Rules` section and collect every rule ID cited there. For each cited ID that did **not** appear in the set of rules whose Verification triggers fired in steps 10 or 11, emit an advisory finding: `Applicable Rules citation does not fire: {rule-id} is listed under ## Applicable Rules, but the rule's Verification trigger did not fire against any spec artifact. Either remove the citation, or extend the spec to bring the cited surface into scope.` Skip this step when the spec has no `## Applicable Rules` section. Citations whose IDs do not resolve to any loaded rule are handled earlier in step 5 and not reprocessed here. See **Applicable Rules citation consistency** in the markdown-only reference for the full semantics and the promotion criterion that governs when this check graduates from advisory to blocking.
+
+<!-- audit:ignore-promotion -->
+14. Scan the spec body (loaded in step 1) and `plan.md` (read it if present) for **ungrounded factual claims about the existing system** — assertions about how current code behaves, what a schema or interface contains, or what an external system returns, stated as fact but carrying neither a citation to a primary source (a `path:line` reference, a named query, a command, or a link to a substantiating artifact) nor an explicit assumption / Open Question marker. Descriptive claims about existing reality need grounding; **prescriptive requirements** about the feature under design (what it MUST do) are contracts, not claims, and are never flagged — the descriptive-vs-prescriptive call is the semantic judgment this step turns on. This is a *form* check: do NOT read source code to confirm a claim (out of scope; see Scope Boundaries), only verify the artifact sources or hedges it. Apply to the spec body at status `clarified` or later and to `plan.md` at `planned` or later; skip on a `draft` spec. Emit each as an **Advisory** finding per the **Grounding** section of the markdown-only reference below.
+
+<!-- audit:ignore-promotion -->
+15. Capture the findings (host responsibility): call the append-inbox primitive once per surviving finding to record it in `{specs-root}/inbox.md` before anything is rendered, so an audit's results outlive the session that ran it (§brownfield-inbox Automatic issue capture). A finding survives when it is still live at the end of the run: `--fix` resolved findings are not captured, and informational entries are not findings — the unexamined-target `skipped` list and cross-service reference unknowns report what could not be examined, not a defect to route. Each bullet takes the auto-capture form `{category}: {family} — {message} — {path} (captured during /papur:analyze)`, and each append passes a **dedup prefix** of `{category}: {family} — {message}` — a true prefix of that bullet — so re-running the audit against an unchanged repo appends nothing. The message belongs in the key: a finding's `path` is the *citing* artifact, not the missing subject, so keying without the message merges every finding one `spec.md` produces and drops all but the first.
+
+<!-- audit:ignore-promotion -->
+16. Render the report (host responsibility): list hard-fail and blocking findings first, advisory findings next, then informational. For each finding, include what failed, what was expected, what was found, and a suggested fix. With `--fix` set, additionally revert any status-done spec either check found drifted — a `review:` block drifted to blocking, or unresolved open questions in the spec's scenarios — through the guarded set-status revert (`from: done`, `to: in-progress`), detailed in the Review state drift and Scenario open questions sections in the markdown-only reference below. Each revert emits its own non-silent notice.
 
 ## Markdown-only reference
 
-The full set of checks (frontmatter schema, spec integrity, artifact completeness, plan consistency, task consistency, scenario consistency, cross-spec references, review state drift, rule integrity, project-level consistency, severity classification, and report shape) is documented below for the markdown-only path. The numbered steps above invoke the mechanical primitives that automate the deterministic checks; the host applies the same checks against the markdown-only path when the runtime is unavailable.
+The full set of checks (frontmatter schema, spec integrity, artifact completeness, plan consistency, task consistency, scenario consistency, scenario open questions, link-adjacent decision drift, acceptance-criterion path existence, cross-spec references, review state drift, rule integrity, project-level consistency, severity classification, and report shape) is documented below for the markdown-only path. The numbered steps above invoke the mechanical primitives that automate the deterministic checks; the host applies the same checks against the markdown-only path when the runtime is unavailable.
 
 ### Frontmatter schema (hard fail)
 
@@ -91,7 +101,7 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 
 - Acceptance criteria section exists with at least one checkbox item
 - No placeholder or empty acceptance criteria
-- Open questions consistent with status (`clarified` or later must have none). When this check fails — a spec at `clarified` / `planned` / `in-progress` with one or more open questions in the body — the spec is in the recovery state defined by spec 014. Suggested fix: run `/papur:clarify` (its recovery path will revert status to `draft` and walk the questions), or `/papur:amend` on a fresh question (which performs the back-edge automatically).
+- Open questions consistent with status — the **spec body's** `## Open Questions` (`clarified` or later must have none). Scenario open questions are a separate signal with their own check (see Scenario open questions below) and never count here. When this check fails — a spec at `clarified` / `planned` / `in-progress` with one or more open questions in the body — the spec is in the recovery state defined by spec 014. Suggested fix: run `/papur:clarify` (its recovery path will revert status to `draft` and walk the questions), or `/papur:amend` on a fresh question (which performs the back-edge automatically).
 - No implementation code blocks (function signatures, package paths, language-specific snippets) in the spec — those belong in plan.md. Format examples, directory structures, and user-facing commands are acceptable when they define behavioral contracts.
 
 ### Artifact completeness (blocking)
@@ -113,11 +123,103 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 - Each task has a "done when" condition
 - Tasks are numbered and ordered
 
+### Grounding (advisory)
+
+Enforces `.ductus/constitution.md` §grounding against the spec and plan bodies: a factual claim about the **existing system** must be grounded — either cited to a primary source or marked as an assumption — rather than asserted from conjecture. `/papur:analyze` checks the *form* of grounding (is the claim sourced or hedged), not its truth: confirming a claim against the code would require reading source, which is out of this command's scope (see Scope Boundaries). The truth check is the agent's job at authoring time (§grounding) and `/papur:review`'s job against code.
+
+Applies to the spec body at status `clarified` or later, and to `plan.md` at `planned` or later (when it exists). `draft` specs are exempt — claims are still forming, the same way open questions are tolerated only at `draft`.
+
+Flag a passage when **all** hold:
+
+- It is a **descriptive claim about existing reality** — how current code behaves, what a schema/table/column/interface contains, what an external service returns, what a config value is. Prescriptive requirements about the feature under design ("the endpoint MUST reject unsigned requests") are contracts, not claims, and are never flagged. The descriptive-vs-prescriptive call is the semantic judgment this check turns on.
+- It is **asserted as fact** — not already framed as an assumption, an open question, or a proposal.
+- It carries **no grounding** — no citation to a primary source (a `path:line` reference, a named query, a command and its output, or a link to an artifact that substantiates it) and no explicit assumption / Open Question marker.
+
+Suggested fix per finding: ground the claim (read the code, query the dev database, run the command — then cite the source), or, when no reachable source can settle it, restate it as an assumption (in a plan) or an Open Question (in a spec, which reverts the spec to `draft` per §spec-lifecycle).
+
+**Severity:** advisory in v1 — grounding is a semantic judgment with false-positive risk, and forcing it blocking before the signal is proven would erode trust the way any noisy gate does. **Promotion criterion:** promote to blocking when a single `/papur:analyze --all` run reports 5 or more ungrounded claims across the repo on two consecutive runs (the second-run requirement guards against transient mid-authoring states where a claim lands before its source is wired in). This mirrors the **Applicable Rules citation consistency** promotion path below.
+
 ### Scenario consistency (advisory)
 
 - Every scenario file has Context and Behavior sections (frontmatter `spec-ref` is checked under Frontmatter schema above)
-- Every scenario file in `scenarios/` has a corresponding task in `tasks.md`
-- Scenario-linked tasks in `tasks.md` are marked complete if the spec status is `done`
+- Every scenario file in `scenarios/` has a corresponding task in `tasks.md` **only while that task is still pending**. `tasks.md` is an ephemeral tracking artifact (§tasks-phase) that `/papur:prune` reduces once work is complete, so a *missing* scenario task is a finding only when the scenario is unimplemented; do NOT flag a scenario whose task was completed and pruned, and do NOT flag any scenario under a `done` spec (its tasks may have been pruned, or the file reset to template state). The durable record of an implemented scenario is the scenario file, the code, and git history — not a retained checkbox.
+- A scenario task that is *still present* in `tasks.md` is marked complete when the spec status is `done`; an absent (pruned) scenario task is not treated as incomplete.
+
+### Scenario open questions (blocking at `done`, advisory otherwise)
+
+A scenario exists to organize information — to keep `spec.md` from becoming one huge document — so its unresolved questions are the spec's questions for the purpose of completeness. Report a finding when any `scenarios/*.md` under the feature carries entries in its `## Open Questions` section, naming the count and the scenarios carrying them.
+
+- **Blocking on a `done` spec.** That state directly contradicts the completion rule in §spec-lifecycle: a spec is not complete while its scenarios carry questions.
+- **Advisory otherwise.** The questions are real remaining work, but a spec still in flight is allowed to carry them.
+- **No grandfather rule**, unlike Review state drift below. An absent `review:` block genuinely marks a spec as predating `/papur:review`; an unresolved scenario question is a present-tense defect whenever it arrived, and exempting it would preserve exactly the state this check exists to surface.
+- Only `## Open Questions` counts. Per §spec-requirements an open question is an **undecided blocker**; a question deferred pending a condition ("not now; revisit when X lands") is resolved *with a condition* and belongs in that scenario's `## Resolved Questions` with its trigger recorded. This is a convention rather than a skip marker on purpose — an exemptible section would let anything blocking be relabelled to ship past the check.
+
+Suggested fix per finding, offering both exits: resolve each question via `/papur:target {feature}/<scenario>` then `/papur:clarify` (scenario-targeted), **or** — when the question is deferred rather than undecided — move it to the scenario's `## Resolved Questions` with the condition that will settle it.
+
+When `--fix` is set, this check additionally reverts affected specs from `done` to `in-progress` — via `set-status` (`from: done`, `to: in-progress`) on the runtime path, a direct frontmatter edit on the markdown-only path — and emits a one-line notice for each (`reverted: specs/{feature}/{file} from done to in-progress — unresolved scenario questions in {scenarios}`). The revert is never silent. Specs below `done` are not reverted: their finding is advisory, so there is no drifted state to correct. See [046 — Scenario open-question visibility](../../specs/046-scenario-open-question-visibility/spec.md).
+
+### Link-adjacent decision drift (advisory)
+
+Enforces `.ductus/constitution.md` §drift-prevention's *Decision resolution* obligation where it can be checked deterministically: an artifact's own prose asserting an open state that its own sibling link's target contradicts. The grounding check above cannot catch this — it verifies a claim is *cited*, not that it is *true*, so a stale claim that correctly cites its source passes.
+
+Applies to every artifact in the feature directory that carries inline sibling links: `spec.md`, `plan.md`, `tasks.md`, and `scenarios/*.md`. `review.md` and `data-model.md` are deliberately outside the set — a review record is pinned to its `reviewed-against` sha and describes the state at that commit, so its prose is correct as written and would flag systematically.
+
+For each **block-level element** — the list item, table row, or paragraph containing the link — scan for open-state tells, then evaluate each sibling link in that block independently:
+
+1. **A sibling link** is one whose target, resolved against the citing file's own directory, lands inside the feature directory. `../spec.md` from a scenario is a sibling; `../NNN-other/spec.md` from a spec is not. Resolution is lexical, never canonicalized: a target may legitimately not exist, and canonicalization would make the result depend on symlinks. Scheme-bearing targets (`https:`, `mailto:`) and bare fragments are excluded; a fragment on a sibling target is stripped and the file part used.
+2. **The tell list is closed at six**, framework-fixed, with no per-project configuration surface: `open question` (and `open questions`), `unresolved`, `still open`, `not yet`, `does not exist`, `left unimplemented`. Making it configurable would let the promotion criterion below measure configuration rather than drift, and a list needing adopter curation degrades silently for exactly the projects least likely to notice.
+3. **Four contexts are exempt**: a fenced code block, an HTML comment, a blockquote, and an inline code span. The code-span exemption is what lets a document *describe* this check without tripping it — this section writes every tell in backticks. The blockquote exemption is the same idea one level up: a spec documenting drift necessarily quotes the stale claim it documents, and a blockquote is markdown's own marker for "quoted material, not my assertion".
+4. **A finding needs an actual contradiction.** A question-state tell (`open question`, `unresolved`, `still open`) is contradicted by a target reporting zero open questions; an implementation-state tell (`not yet`, `does not exist`, `left unimplemented`) by a spec target at `in-progress` or `done`. Every other pairing produces nothing. `does not exist` is judged against lifecycle status rather than file presence on purpose: a link that resolves always points at a present file, so a presence test could only ever fire and never filter, and a test that cannot fail is not a test.
+5. **A scenario target is evaluated on its open-question count and its file existence only.** A scenario carries no lifecycle status, so an implementation-state tell against one produces no finding rather than a guess. Deriving that state from the scenario's task checkbox is explicitly rejected: a spent task pruned per §tasks-phase leaves the same absence as an unimplemented one, so the derived signal would be wrong in exactly the mature-spec case where it would matter.
+6. **One finding per (block, link) pair**, naming the citing file and line, the link target, every tell that fired, and the target's contradicting state. Not one per tell — `does not exist yet` matches two tells at once, and reporting one authorial claim twice would inflate the promotion threshold with duplicates.
+
+**Not covered, and recorded so it is not mistaken for a gap:** a link whose target *exists* but whose cited section no longer says what the citing prose claims. Verifying that needs a fragment anchor or semantic reading. Prose that merely reads as historical without a structural marker is likewise undetectable deterministically; that is an authoring convention, not a check.
+
+Suggested fix per finding: correct the prose to describe the target's current state, or — when the prose is right and the target is wrong — fix the target.
+
+### Acceptance-criterion path existence (advisory)
+
+For each spec at `status: done`, for each entry under `## Acceptance Criteria`, report every filesystem path the criterion names that no longer resolves.
+
+An acceptance criterion is a **contract**: naming a path asserts that path is part of the delivered system. Nothing re-verifies that assertion after a later spec deletes the subject, so the completion gate keeps reading a checked criterion as satisfied. That is a sharper failure than stale prose — stale prose misleads a reader who can still discount it, while a stale contract is treated as satisfied by the tooling.
+
+- **Scope is `## Acceptance Criteria` on `done` specs, and nothing else.** Body prose may name a dead path perfectly correctly while describing history, so widening the scope would flag true statements. Criteria below `done` describe work in flight, where a path that does not exist yet is expected.
+- **Paths are read inside inline code spans** — the inverse of the tell scan's rule above, because paths are backticked by convention. That inversion is why these are two families rather than one check with a flag: one family cannot hold both parsing rules coherently.
+- **The grammar**: a code span's whole trimmed content — with surrounding quotes and a leading `./` stripped — is a candidate when it contains a `/` that is **not** its final character, contains no whitespace, contains none of `{ } * ? [ ] < > $ |` or `:`, does not begin with `-` or `/`, does not contain `NNN`, and is entirely ASCII. Each exclusion is load-bearing — `:` rejects URLs, `path:line` citations, and every `/papur:…` slash-command reference; the braces reject placeholders and `NNN` the unbraced spec-number one; the bracket and star forms reject globs; a leading `-` rejects flags; the ASCII test rejects the `…` of an elided path; and requiring an *internal* separator rejects a bare directory name used conceptually ("the feature's `scenarios/` directory"). A candidate resolves when the repo-root-relative path exists as a file **or** a directory, with a trailing `/` stripped first.
+- **The criterion must be a live claim.** A path is checked only when its criterion actually claims the path is *present*. A criterion carrying any of fourteen closed phrases is exempted whole and its paths recorded as `not-a-live-claim`: deletion and retirement (`deleted`, `does not exist`, `no longer exists`, `is removed`, `are removed`, `since retired`), rename (`is renamed to`, `are renamed to`, `renamed from`, `(was` + space), migration subject (`target paths`), adopter scope (`in the project`), and hedges (`if it exists`, `e.g.`). This is the tell list's co-occurrence design **inverted**: there a phrase asserting an open state is *contradicted* by a closed target, here a phrase asserting absence is *confirmed* by a path that does not resolve, so the finding would be exactly backwards — `X is deleted` is satisfied precisely because `X` is gone. Matched as phrases, not words: bare `adopter` would exempt a criterion naming a genuinely stale path. The whole criterion is exempted rather than the matched path, because a criterion about a transition names its endpoints together.
+- **An unresolved candidate is a finding only when its own top-level segment exists.** When that segment is absent, nothing is provable — a framework project's criteria legitimately name paths that live in an adopter's checkout — so the candidate is recorded as `root-absent` under Unexamined targets below rather than flagged. In a project where those roots do exist, drift beneath them is provable again, so the rule self-corrects.
+- **A path this project ships into an adopter's checkout is recorded, not flagged.** The rule above cannot catch these — the top-level segments of `specs/rules/security-backend.md`, `.ductus/constitution.md`, `.githooks/ductus-pre-commit` all exist in a framework project, yet the criteria naming them are about the *adopter's* repo, where they do resolve. Derive the destination set from the **Shared Files** manifest tables in `framework/bootstrap/ductus.md` — the canonical registry of what lands where — taking only cells that are exactly one backticked span; a candidate that equals a destination, or is a directory containing one, is recorded as `ships-to-adopter` under Unexamined targets below. An absent or unparseable manifest yields an empty set, so nothing is suppressed and findings are still emitted: the failure direction is *reporting*, never silent swallowing. In an adopter project the file is absent and the suppression simply never engages — correct rather than limited, since those paths resolve there anyway.
+- **An unbackticked path is missed.** Accepted: outside code font a `/`-bearing token is more often a slash command, a placeholder, or an `and/or` than a path.
+
+Suggested fix per finding: correct the criterion to name the current path, or — when the deletion means the criterion is no longer satisfied — uncheck it and route the work through `/papur:amend`.
+
+### Unexamined targets (informational)
+
+Both checks above read *targets* that may be unreadable: a link resolving to a file that no longer exists, a target whose frontmatter will not parse, a target carrying no state the tell's class can be evaluated against. None of these produces a finding — an unknown is never escalated into a defect, matching the `status-unreadable` precedent in **Cross-service references** below.
+
+They are not silent either. On the runtime path the `check-artifacts` result carries a `skipped` list of `{family, reason, path}` records over the closed reason set `target-missing` / `target-unparseable` / `no-readable-state` / `root-absent` / `ships-to-adopter` / `artifact-unreadable` / `not-a-live-claim`; on the markdown-only path, note the same targets as you walk them. Render them in the **Informational** tier. The reason is `QUAL-CLAIM-001`: without the list, a family that examined every target and found nothing returns exactly what a family that could examine nothing returns, and a reader acts on the reassuring one. `clean` keeps its narrow meaning — no findings — so the assurance lives in the pair: clean with nothing skipped is verified-clean, clean with something skipped is partially examined.
+
+### Promotion criterion for both decision-drift checks (shared)
+
+**Severity:** advisory at introduction, matching the grounding and Applicable-Rules checks. **Promotion criterion:** promote to blocking when a single `/papur:analyze --all` run reports 5 or more findings across the repo on two consecutive runs, **and** every finding in those runs is confirmed a true positive.
+
+The first half matches the existing criteria verbatim, preserving comparability and the second-run guard against transient mid-authoring states. The second half is required *here* and not for the LLM-judged checks, and the difference is the point: those criteria measure volume, which is adequate when findings are already filtered for plausibility by a semantic judgment. These two are mechanical matches — a word list and a path grammar — so a noisy implementation produces 5+ findings on two consecutive runs exactly as reliably as an accurate one. Volume alone cannot distinguish real drift from false positives at the moment that distinction matters most. The precision half needs maintainer confirmation, which is a judgment step; promoting a check to blocking is already a deliberate human decision rather than something the tool does to itself.
+
+### Acceptance-criterion labels (advisory)
+
+Every acceptance criterion carries a stable `AC{n}:` label after its checkbox (§spec-requirements), assigned by the runtime's labelling pass and permanent for the life of the criterion. Assignment belongs to the pass; **this check is the enforcement half**, and it is needed because a criterion typed by hand in an editor never touches a primitive. Three invariants, each checkable from the artifact alone with no git-history read:
+
+- **A duplicate `AC{n}` within one spec.** A label addresses exactly one criterion, so an ambiguous one is a defect to report rather than a state a tool resolves by picking the first match.
+- **`next-criterion` at or below the highest label present in the body.** The frontmatter counter is what makes a retired label unreissuable, so one that has fallen to or below the body maximum means the next assignment hands a *live* label to a second requirement. A value that is not a positive integer is reported the same way; the pass refuses such a spec rather than repairing it, since a corrupted counter may mean a label was already reissued and a silent repair would hide that.
+- **An unlabelled criterion, once the spec carries `next-criterion` at all.** The gate is the field's presence, not a date: a spec with no counter has never been through the pass, and §text-first-artifacts defines that absence as "no labels assigned yet" rather than a defect. The corpus backfill is what makes the check universal — deliberately, rather than a per-spec grandfather date, which is the exemption state [046](../../specs/046-scenario-open-question-visibility/spec.md) refused for scenario questions on the grounds that a sanctioned hiding place is worse than the gap it papers over.
+
+**Applies at every status.** A label is an identifier, not a contract about the delivered system, so — unlike Acceptance-criterion path existence above — it is as wrong to duplicate one in a `draft` as in a `done` spec.
+
+**Nothing here is an unexamined target.** The whole subject is the spec's own frontmatter and criteria list, both of which any path has already read, so this check never contributes to Unexamined targets above.
+
+Suggested fix per finding: for an unlabelled criterion or a lowered counter, run the labelling pass (`label-criteria` on the runtime path; on the markdown-only path, the same `max(highest label in body, next-criterion)` derivation applied in body order by hand) — the rule is arithmetic, so both paths agree by construction. A duplicate label and a corrupted counter are author decisions the pass deliberately does not make: renumber the later duplicate to a fresh label above the counter, and reconstruct the counter from the highest label ever issued rather than the highest still present.
+
+**Severity:** advisory. The pre-commit hook runs the pass on every commit, so the two assignable states — an unlabelled criterion, a counter that has fallen behind — are resolved by the next commit rather than owed to a gate; the two that are not assignable are rare hand-edit defects. See [013 — Text-First Artifacts](../../specs/013-text-first-artifacts/scenarios/criterion-identifiers.md).
 
 ### Cross-spec references (advisory)
 
@@ -127,11 +229,11 @@ Reference: the schema is canonically declared in `framework/constitution.md` §t
 
 ### Cross-service references (advisory)
 
-A spec's derived `references:` frontmatter index records each cross-service reference as a `{service, spec}` pair, harvested from body links to a registered service's canonical repo URL (see [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md)). On the runtime path the `resolve-references` primitive classifies each entry; when the runtime is unavailable, classify each entry with the host's file tools — read `.govern.toml` and the linked spec directly, with **no shell-pipeline substitution**. The repo URL is identity and navigation only and is **never fetched**; status is read from the local checkout.
+A spec's derived `references:` frontmatter index records each cross-service reference as a `{service, spec}` pair, harvested from body links to a registered service's canonical repo URL (see [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md)). On the runtime path the `resolve-references` primitive classifies each entry; when the runtime is unavailable, classify each entry with the host's file tools — read `.ductus/config.toml` and the linked spec directly, with **no shell-pipeline substitution**. The repo URL is identity and navigation only and is **never fetched**; status is read from the local checkout.
 
 For each `{service, spec}` entry, in index order, decide the outcome by what can be proven, then map it to a severity:
 
-- **`broken`** (Advisory finding) — the service is registered in `.govern.toml` `[services]` and its checkout `path` is reachable, but the target `spec.md` does not resolve (renamed, moved, deleted, or mistyped upstream, or the URL is malformed). A provable defect in *this* spec — the cross-repo analog of a broken sibling link — surfaced on every run as an **Advisory** finding (non-blocking, because references are informative and never load-bearing). Suggested fix: correct or remove the reference link in the spec body, then re-run the harvest generator.
+- **`broken`** (Advisory finding) — the service is registered in `.ductus/config.toml` `[services]` and its checkout `path` is reachable, but the target `spec.md` does not resolve (renamed, moved, deleted, or mistyped upstream, or the URL is malformed). A provable defect in *this* spec — the cross-repo analog of a broken sibling link — surfaced on every run as an **Advisory** finding (non-blocking, because references are informative and never load-bearing). Suggested fix: correct or remove the reference link in the spec body, then re-run the harvest generator.
 - **`unregistered`** (informational, not a finding) — the reference's repo matches no `[services]` entry. A plain navigational link; status was not attempted, so nothing is broken. Surface it with a pointer to `/papur:link` to register the service.
 - **`not-checked-out`** (informational, not a finding) — registered, but the local `path` is missing or not a usable checkout. Nothing can be proven without a checkout, so this is **never** reported as broken.
 - **`status-unreadable`** (informational, not a finding) — the target file exists but its `status` cannot be read (no or malformed frontmatter, missing or out-of-set `status`, or the link targets a scenario, which has no status). The defect is upstream's, not this spec's.
@@ -150,11 +252,11 @@ For each spec at `status: done`, read the spec's frontmatter `review:` block:
 
 Specs not at `status: done` are silently exempt — the `review:` block is populated lazily on first `/papur:review` run, so its absence on `draft` / `clarified` / `planned` / `in-progress` specs is normal.
 
-When `--fix` is set, this check additionally reverts affected specs from `done` to `in-progress` and emits a one-line notice for each (`reverted: specs/{feature}/{file} from done to in-progress — re-run /papur:review`). The revert is never silent; the notice is the point of the action. Re-running `/papur:review` on each reverted spec is left to the operator — auto-running it during `--fix` is out of scope. The grandfather rule applies under `--fix` too: pre-feature `done` specs with no `review:` block are never reverted.
+When `--fix` is set, this check additionally reverts affected specs from `done` to `in-progress` — via `set-status` (`from: done`, `to: in-progress`) on the runtime path, a direct frontmatter edit on the markdown-only path — and emits a one-line notice for each (`reverted: specs/{feature}/{file} from done to in-progress — re-run /papur:review`). The revert is never silent; the notice is the point of the action. Re-running `/papur:review` on each reverted spec is left to the operator — auto-running it during `--fix` is out of scope. The grandfather rule applies under `--fix` too: pre-feature `done` specs with no `review:` block are never reverted.
 
 ### Rules (blocking and advisory)
 
-Rules are the cross-cutting tier of the framework's three-tier requirement model (see §rules in `constitution.md`). Discover rule files by directory walk: list every `*.md` file in the project's rule-file directory and classify each by basename suffix per the closed-suffix policy declared in `constitution.md` §rules — `*-backend.md`, `*-frontend.md`, `*-cross.md`, or unrecognized. `/papur:analyze` loads **every** discovered file regardless of detected stack — and regardless of the project's `[rules] surfaces` setting (`govern.md` §Project Configuration) — because citation verification spans surfaces: a backend project that cites `FE-XSS-001` in a scenario covering HTML output still needs that citation verified. `[rules] surfaces` scopes `/papur:review` enforcement only (which surface's rules are checked against code); it never prunes the rule-file set `/papur:analyze` loads for citation resolution.
+Rules are the cross-cutting tier of the framework's three-tier requirement model (see §rules in `.ductus/constitution.md`). Discover rule files by directory walk: list every `*.md` file in the project's rule-file directory and classify each by basename suffix per the closed-suffix policy declared in `.ductus/constitution.md` §rules — `*-backend.md`, `*-frontend.md`, `*-cross.md`, or unrecognized. `/papur:analyze` loads **every** discovered file regardless of detected stack — and regardless of the project's `[rules] surfaces` setting (`ductus.md`, **Project Configuration**) — because citation verification spans surfaces: a backend project that cites `FE-XSS-001` in a scenario covering HTML output still needs that citation verified. `[rules] surfaces` scopes `/papur:review` enforcement only (which surface's rules are checked against code); it never prunes the rule-file set `/papur:analyze` loads for citation resolution.
 
 For each file with an unrecognized suffix, emit one stdout line:
 
@@ -168,22 +270,30 @@ Then emit a single stdout line naming what was selected:
 loading rule files: <comma-separated basenames>
 ```
 
-New rule files are introduced via their own feature spec; the suffix governs which stacks see them at `/papur:review` time, but `/papur:analyze` loads them all unconditionally.
+Rule files reach the directory from two origins: those shipped by `ductus` (introduced via their own feature spec) and those a project authors for itself (no introducing spec — see §rules Lifecycle in `.ductus/constitution.md`). `/papur:analyze` treats both identically. The suffix governs which stacks see a file at `/papur:review` time, but `/papur:analyze` loads them all unconditionally.
 
 For each loaded rule file:
 
 - Every rule heading is level-3 and contains only the rule ID (no surrounding text)
 - Every rule has the three required fields: a block-quoted Statement, `**Rationale:**` paragraph, and `**Verification:**` paragraph
-- Every rule's ID matches the format declared in the rule file's introducing-spec data-model (`{BE|FE}-{CATEGORY}-{NNN}` for security files; `CFG-{CONST|ENV}-{NNN}` for configuration)
+- Every rule's ID matches the ID format that governs that file, resolved in the order below
 - No two rules in the same file share an ID
 
+**Which ID format governs a file.** Take the first source that applies:
+
+1. **The file's introducing-spec data-model**, when the file has one — `{BE|FE}-{CATEGORY}-{NNN}` for the security files (`specs/008-security-rules/data-model.md`), `CFG-{CONST|ENV}-{NNN}` for configuration (`specs/017-derive-dont-ask/data-model.md`).
+2. **The format the file declares in its own header**, which is where a rule file's ID prefix and category abbreviations are canonically declared (`.ductus/constitution.md` §rules) — e.g. `quality-cross.md` declares `QUAL-{CATEGORY}-{NNN}` with categories `STUB`, `GROUND`, `CLAIM`.
+3. **The generic rule-ID grammar** — an uppercase prefix, an `[A-Z][A-Z0-9]*` category abbreviation, and a zero-padded sequence number, as declared in `specs/008-security-rules/data-model.md` §Rule ID format. This is the shape `check-rule-ids` resolves citations against, so an ID that fails it cannot be cited from a spec regardless of what any header says.
+
 If any check above fails, the affected rule file is treated as unloadable for the remainder of this analyze pass.
+
+A rule file is **never** unloadable merely for having no introducing spec, or for declaring no format in its header — those conditions select which tier governs, they are not themselves failures. A project-authored rule file has no introducing spec by construction; it is validated on exactly the same terms as a shipped one, at tier 2 when its header declares a format and tier 3 when it does not. Treating the absence of an introducing spec as a validation failure would make a supported adopter extension unloadable, silently dropping its rules from citation resolution and from the fired-rule set that steps 9 and 10 assess.
 
 #### Applicable Rules citation consistency (advisory)
 
 The rule-citation audit runs in both directions:
 
-- **Rule fires; not cited (existing).** For every loaded rule whose Verification trigger fires against the target spec, the per-rule semantic assessment (steps 8 and 9) emits a finding when the spec does not address the rule. This direction has been live since 008.
+- **Rule fires; not cited (existing).** For every loaded rule whose Verification trigger fires against the target spec, the per-rule semantic assessment (steps 9 and 10) emits a finding when the spec does not address the rule. This direction has been live since 008.
 - **Cited; rule does not fire (new in 016).** For every rule ID listed under the spec's optional `## Applicable Rules` section that did NOT appear in the fired set from the existing direction, emit an advisory finding. The author either removes a decorative citation or extends the spec to bring the cited surface into scope; either resolution keeps the section honest.
 
 The check assumes every citation resolves to a real rule — citations to unknown rule IDs are caught earlier by the rule-integrity check (step 5) and are not reprocessed here. Specs without an `## Applicable Rules` section are silently exempt (no citations to police).
@@ -192,20 +302,21 @@ The check assumes every citation resolves to a real rule — citations to unknow
 
 ### Project-level consistency (advisory)
 
-These checks span the project's installed command set and constitution rather than the target feature. They catch drift in the framework files `govern` ships, surfaced per the Drift Prevention principles in `constitution.md` §drift-prevention. Run once per `/papur:analyze` invocation regardless of which feature is targeted; with `--all`, run once before per-feature output.
+These checks span the project's installed command set and constitution rather than the target feature. They catch drift in the framework files `ductus` ships, surfaced per the Drift Prevention principles in `.ductus/constitution.md` §drift-prevention. Run once per `/papur:analyze` invocation regardless of which feature is targeted; with `--all`, run once before per-feature output.
 
 Read inputs:
 
-- `constitution.md` (already loaded by `/papur:target`)
+- `.ductus/constitution.md` (already loaded by `/papur:target`)
 - `.claude/commands/papur/help.md`
 - The full set of `.md` files in `.claude/commands/papur/` (frontmatter only — do not read bodies for these checks)
-- `.claude/commands/govern.md` if it exists (frontmatter only — the bootstrap installer lives outside the project namespace)
+- `.claude/commands/ductus.md` if it exists (frontmatter only — the bootstrap installer lives outside the project namespace)
 
 Checks:
 
-- **Generator drift** — run `scripts/gen-help-tables.sh --dry-run` (when the script exists in the project). Non-empty diff means the help.md command tables are out of sync with their sources. Report it as `Generator out of sync: {script}; the next commit will resolve.`
-- **Anchor resolution** — every `§<name>` reference in any installed command file (typically in `Reference: §<first>, §<second>` Scope-Boundaries lines) resolves to a corresponding marker in `constitution.md`.
-- **Command frontmatter completeness** — every `.md` file in the installed commands directory has a `description:` frontmatter field; the same check applies to `.claude/commands/govern.md` when that file exists. Files whose body documents an `$ARGUMENTS` parameter additionally have `argument-hint:`. Report missing fields; do not check value content.
+- **Generator drift** — run `scripts/gen-help-tables.sh --dry-run` (via the `run-generator` primitive on the runtime path, the same way step 6 runs `gen-spec-deps.sh`; when the script exists in the project). Non-empty diff means the help.md command tables are out of sync with their sources. Report it as `Generator out of sync: {script}; the next commit will resolve.`
+- **Anchor resolution** — every `§<name>` reference in any installed command file (typically in `Reference: §<first>, §<second>` Scope-Boundaries lines) resolves to a corresponding marker in `.ductus/constitution.md`.
+- **Command frontmatter completeness** — every `.md` file in the installed commands directory has a `description:` frontmatter field; the same check applies to `.claude/commands/ductus.md` when that file exists. Files whose body documents an `$ARGUMENTS` parameter additionally have `argument-hint:`. Report missing fields; do not check value content.
+- **Orphaned references** — every reference an adopter-owned file makes into a ductus-managed path resolves (the `check-orphaned-references` primitive on the runtime path; step 9 above). The referrers are the `create`-strategy files the manifest never overwrites — `CLAUDE.md`, `AGENTS.md`, `README.md`, `.githooks/pre-commit` — and the managed roots are `.ductus/`, `.githooks/`, and the configured spec root. A migration can re-point the files it owns but not these, so a chain where a later entry moves a path an earlier entry wrote into one leaves a reference pointing at nothing, silently: a dangling `@import` yields a constitution that is simply not loaded, and a hook calling a missing script fails at commit time far from the run that broke it. Report `Orphaned reference: {referrer}:{line} names {target}, which does not exist` — plus `; most likely orphaned by migration {id}` **only** when the result's `attribution` is `registry`. Under `watermark` attribution say so instead, naming `last-applied` as the only migration context available; the two must not render alike. Patterns are not references: a candidate containing `*` or `NNN` is documentation naming a shape, and testing it against the filesystem would manufacture findings out of prose. A path the project declares it *ships* to adopters (a **Shared Files** manifest destination, when that manifest is present — i.e. in ductus's own repo) is likewise not local breakage. Report, never repair; the adopter may have hand-edited the reference. On the markdown-only path, read those four files and test each managed-root path they name with the host's file tools. See [027 — Bootstrap Migration Registry](../../specs/027-bootstrap-migration-registry/spec.md)'s `migration-chain-reference-integrity` for the rule.
 
 These are advisory, not blocking — they signal framework drift that the project should resolve at its convenience. They do not prevent pipeline advancement on the target feature.
 
@@ -215,3 +326,43 @@ These are advisory, not blocking — they signal framework drift that the projec
 - **Blocking** — structural or content issues that must be fixed before the next pipeline gate fires.
 - **Advisory** — issues that should be fixed but do not block advancement.
 - **Informational** — observations that may warrant attention but are neither errors nor warnings.
+
+### Finding capture (durability)
+
+Findings are recorded to `{specs-root}/inbox.md` **before** the report is
+rendered. Rendering surfaces findings to whoever is watching; capture is what
+makes them survive the session, and a run interrupted between the two still
+leaves the record. This is the §brownfield-inbox *Automatic issue capture*
+contract applied to a command whose primary output is findings — a findings
+command that only prints is one whose results can be recovered solely by
+remembering to re-run it.
+
+- **Captured**: every finding still live at the end of the run — hard fail,
+  blocking, and advisory alike. Severity raises salience, not routing.
+- **Not captured**: findings `--fix` resolved in the same run (they no longer
+  exist to record), and everything in the **Informational** tier — the
+  unexamined-target list and cross-service reference unknowns state what could
+  not be examined rather than a defect to route.
+
+Each item is one bullet in the auto-capture form:
+
+```text
+- [ ] {category}: {family} — {message} — {path} (captured during /papur:analyze)
+```
+
+Every append is guarded against what the inbox already holds, keyed on
+`{category}: {family} — {message}`. Re-running the audit against an unchanged
+repo therefore appends nothing and leaves `inbox.md` byte-identical.
+
+The message is part of the key because a finding's `path` is the **citing**
+artifact — the `spec.md` whose criterion or prose raised it — not the missing
+subject the finding is about. That subject appears only inside the message, so
+a key without it merges every finding one artifact produces and keeps only the
+first: a spec naming three missing paths would record one. The trade is that
+re-wording a check's message re-appends its findings once, which is the
+cheaper failure and a rare one.
+
+Capture never removes anything. A captured item leaves the inbox the way every
+other item does — `/papur:groom` routes it, or the work that resolves it
+clears it. A resolved finding that fires again is captured again, because it is
+again true.

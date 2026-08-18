@@ -6,7 +6,7 @@ A markdown-flavored markup language that compiles to semantic, accessible HTML, 
 
 ## Constitution
 
-See [constitution.md](constitution.md) — guiding principles, development pipeline, spec lifecycle, and quality standards that govern this project.
+See [.ductus/constitution.md](.ductus/constitution.md) — guiding principles, development pipeline, spec lifecycle, and quality standards that govern this project.
 
 ## Tech Stack
 
@@ -38,7 +38,7 @@ are recorded project-level choices, wired in by the specs that use them.
 
 ## Project Structure
 
-- `constitution.md` -- Principles, pipeline, quality standards
+- `.ductus/constitution.md` -- Principles, pipeline, quality standards
 - `AGENTS.md` -- Agent rules: tech stack, conventions, workflow, gotchas, boundaries
 - `CLAUDE.md` -- `@AGENTS.md` + Claude Code-specific configuration
 - `specs/`

@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 9
 ---
 
 # 004 — Theming
@@ -182,14 +183,14 @@ The compiler does not enforce the separation — author discretion. This is a "c
 
 ## Acceptance Criteria
 
-- [ ] `space.md: 1rem` emits `--space-md: 1rem` on the root scope for web targets.
-- [ ] `$brand` in `::: css` resolves to `var(--brand)` on web and to the literal value (e.g. `oklch(60% 0.2 250)`) on pdf / email / plain.
-- [ ] `@dark` overrides emit under `@media (prefers-color-scheme: dark)` and under `[data-theme="dark"]` on web; on static targets, only the active variant for that target is inlined.
-- [ ] A `::: theme` block inside a fenced div emits its overrides scoped to that container's selector.
-- [ ] `--pad: $space.md` resolves the `$space.md` reference at compile time, then emits the resulting value on the component selector.
-- [ ] `@breakpoint.md` produces a media query at the themed pixel value.
-- [ ] `text.lg: base * 1.25` emits `calc(var(--base) * 1.25)` on web and the inlined value on static targets.
-- [ ] The two-tier pattern is not enforced — a project that defines only semantic tokens compiles without warnings.
+- [ ] AC1: `space.md: 1rem` emits `--space-md: 1rem` on the root scope for web targets.
+- [ ] AC2: `$brand` in `::: css` resolves to `var(--brand)` on web and to the literal value (e.g. `oklch(60% 0.2 250)`) on pdf / email / plain.
+- [ ] AC3: `@dark` overrides emit under `@media (prefers-color-scheme: dark)` and under `[data-theme="dark"]` on web; on static targets, only the active variant for that target is inlined.
+- [ ] AC4: A `::: theme` block inside a fenced div emits its overrides scoped to that container's selector.
+- [ ] AC5: `--pad: $space.md` resolves the `$space.md` reference at compile time, then emits the resulting value on the component selector.
+- [ ] AC6: `@breakpoint.md` produces a media query at the themed pixel value.
+- [ ] AC7: `text.lg: base * 1.25` emits `calc(var(--base) * 1.25)` on web and the inlined value on static targets.
+- [ ] AC8: The two-tier pattern is not enforced — a project that defines only semantic tokens compiles without warnings.
 
 ## Open Questions
 

@@ -1,5 +1,5 @@
 [migrations]
-last_applied = "session-file-consolidate"
+last_applied = "runtime-store-path"
 
 [project]
 name = "papur"
@@ -9,9 +9,12 @@ languages = ["Rust"]
 [rules]
 surfaces = ["backend"]
 
+[paths]
+specs-root = "specs"
+
 [review]
 tech-stack-verified = true
 
-# govern (host)
+# ductus (host)
 [host]
 project = "papur"

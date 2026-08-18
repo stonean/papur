@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 6
 ---
 
 # 013 — Plain Text Target
@@ -38,11 +39,11 @@ Emission rules for the plain text target. The plain emitter produces a text-only
 
 ## Acceptance Criteria
 
-- [ ] The plain emitter produces a single text file with no markup characters that suggest a richer format.
-- [ ] Headings are visually distinguishable in plain text (e.g., underlined or prefixed with `#`s — the rendering is consistent across the file).
-- [ ] Tables render in a readable plain-text grid.
-- [ ] `::: theme`, `::: css`, `::: script`, and `::: html` blocks produce no output.
-- [ ] `::: @plain` content blocks emit; other target-qualified blocks do not.
+- [ ] AC1: The plain emitter produces a single text file with no markup characters that suggest a richer format.
+- [ ] AC2: Headings are visually distinguishable in plain text (e.g., underlined or prefixed with `#`s — the rendering is consistent across the file).
+- [ ] AC3: Tables render in a readable plain-text grid.
+- [ ] AC4: `::: theme`, `::: css`, `::: script`, and `::: html` blocks produce no output.
+- [ ] AC5: `::: @plain` content blocks emit; other target-qualified blocks do not.
 
 ## Open Questions
 

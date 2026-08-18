@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 7
 ---
 
 # 010 — Web Target
@@ -38,12 +39,12 @@ The web emitter auto-emits a small set of defaults the author can override but d
 
 ## Acceptance Criteria
 
-- [ ] A papur file with content, `::: theme`, `::: css`, and `::: script` blocks compiles to HTML, CSS, and JS files (or an inlined HTML document, per build config).
-- [ ] Theme tokens emit as CSS custom properties on the root scope; references emit as `var(--token)`.
-- [ ] Roles emit as semantic elements per [003-semantic-elements](../003-semantic-elements/spec.md).
-- [ ] The skip link, viewport meta tag, and `lang` attribute are auto-emitted on every compiled document.
-- [ ] `::: @web` qualified blocks emit; `::: @pdf` / `::: @email` qualified blocks do not.
-- [ ] Behaviors compile to vanilla JS and ship without a framework runtime.
+- [ ] AC1: A papur file with content, `::: theme`, `::: css`, and `::: script` blocks compiles to HTML, CSS, and JS files (or an inlined HTML document, per build config).
+- [ ] AC2: Theme tokens emit as CSS custom properties on the root scope; references emit as `var(--token)`.
+- [ ] AC3: Roles emit as semantic elements per [003-semantic-elements](../003-semantic-elements/spec.md).
+- [ ] AC4: The skip link, viewport meta tag, and `lang` attribute are auto-emitted on every compiled document.
+- [ ] AC5: `::: @web` qualified blocks emit; `::: @pdf` / `::: @email` qualified blocks do not.
+- [ ] AC6: Behaviors compile to vanilla JS and ship without a framework runtime.
 
 ## Open Questions
 

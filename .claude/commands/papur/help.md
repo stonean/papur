@@ -6,6 +6,15 @@ description: Display an overview of the pipeline and its slash commands.
 
 Display an overview of the pipeline and how to use its slash commands.
 
+## Purpose
+
+A static, at-a-glance guide to the pipeline: the states a spec moves through, the command for each transition, and the key concepts (session target, inbox, rules). Printed verbatim — it scans no files and runs no commands.
+
+## Scope Boundaries
+
+- Prints a fixed guide. Do NOT read spec files, list directories, run generators, or invoke any primitive — this command has no runtime path and no side effects.
+- The command tables in the guide are generated from each command's frontmatter `description:` by `scripts/gen-help-tables.sh` (kept in sync by the pre-commit hook and `/papur:audit`), not assembled at print time.
+
 ## Instructions
 
 Print the following guide exactly (do not scan files or run commands):
@@ -42,7 +51,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | `/papur:plan` | clarified → planned | Create a technical plan and task breakdown for a clarified spec. |
 | `/papur:implement` | planned → in-progress → done | Execute implementation tasks for the targeted feature. |
 | `/papur:review` | blocks `done` (MUST violations) | Audit code against rules — security, reuse, quality, efficiency, simplicity. Writes review.md; blocks done on MUST violations. |
-| `/papur:analyze` | — | Audit artifacts against each other — spec, plan, tasks, scenarios, frontmatter, dependencies, rule IDs. Read-only. |
+| `/papur:analyze` | — | Audit artifacts against each other — spec, plan, tasks, scenarios, frontmatter, dependencies, rule IDs. Read-only by default; --fix reverts a done spec drifted by review state or unresolved scenario questions. |
 
 <!-- generated:commands-pipeline:end -->
 
@@ -53,6 +62,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | Command | Description |
 | --- | --- |
 | `/papur:amend` | Add a question or a scenario to the targeted spec (classifier-driven). |
+| `/papur:prune` | Prune a feature's tasks.md — drop spent task sections, or reset to template state. |
 
 <!-- generated:commands-refine:end -->
 
@@ -86,7 +96,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 
 | Command | Description |
 | --- | --- |
-| `/govern` | Adopt or update govern in an existing project. |
+| `/ductus` | Adopt or update ductus in an existing project. |
 | `/papur:configure` | Configure settings.local.json with permissions for slash commands. |
 
 <!-- generated:commands-bootstrap:end -->
@@ -104,7 +114,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 
 ### Key Concepts
 
-- **Session target** — The feature you're currently working on, stored in `.govern.session.toml`. Most commands operate on the target by default.
+- **Session target** — The feature you're currently working on, stored in `.ductus/session.toml`. Most commands operate on the target by default.
 - **Dependencies** — Features declare dependencies in their spec. A feature is blocked until its dependencies reach `clarified` or later.
 - **Artifacts** — Each feature directory can contain `spec.md`, `plan.md`, `tasks.md`, `data-model.md`, and a `scenarios/` subdirectory.
 - **Scenarios** — A scenario is a spec at a lower level of abstraction. Scenarios live in `specs/NNN-feature/scenarios/slug.md` and capture bugs, edge cases, and detailed behavior. Each scenario gets a linked task in `tasks.md`.

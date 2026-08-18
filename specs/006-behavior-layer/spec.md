@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 6
 ---
 
 # 006 — Behavior Layer
@@ -51,11 +52,11 @@ The behavior layer is silently dropped from non-web targets (pdf, email, plain) 
 
 ## Acceptance Criteria
 
-- [ ] A handler attached to a role selector compiles to a vanilla-JS event listener on every element matching that role.
-- [ ] The emitted JS has no framework dependency and runs against the DOM produced by the structure layer.
-- [ ] A role recognized as a bundled accessible pattern (e.g., `.dialog`) auto-emits the correct ARIA attributes, keyboard handlers, and focus management without explicit author wiring.
-- [ ] An unrecognized role with a handler compiles, but the author is responsible for ARIA — strict mode warns if interactive markup lacks an accessible name.
-- [ ] On pdf, email, and plain targets, the `::: script` block produces no output.
+- [ ] AC1: A handler attached to a role selector compiles to a vanilla-JS event listener on every element matching that role.
+- [ ] AC2: The emitted JS has no framework dependency and runs against the DOM produced by the structure layer.
+- [ ] AC3: A role recognized as a bundled accessible pattern (e.g., `.dialog`) auto-emits the correct ARIA attributes, keyboard handlers, and focus management without explicit author wiring.
+- [ ] AC4: An unrecognized role with a handler compiles, but the author is responsible for ARIA — strict mode warns if interactive markup lacks an accessible name.
+- [ ] AC5: On pdf, email, and plain targets, the `::: script` block produces no output.
 
 ## Open Questions
 

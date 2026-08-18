@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 11
 ---
 
 # 011 — PDF Target
@@ -93,16 +94,16 @@ Direct emission keeps control of all dereferencing inside papur. The residual at
 
 ## Acceptance Criteria
 
-- [ ] A `.papur` document compiles to a valid, Tagged PDF via the `pdf` target with no network access performed at any point during compilation.
-- [ ] Headings, lists, tables, and images appear in the PDF structure tree with correct reading order and propagated alt text.
-- [ ] The layout pass produces a serializable / inspectable box tree, with unit tests asserting box positions independent of PDF byte output.
-- [ ] A document longer than one page breaks correctly: no stranded headings, table headers repeat across page boundaries, `break-inside: avoid` is honored.
-- [ ] Standard-14 fonts emit with no embedding; author-supplied TrueType / OpenType fonts embed as subsets containing only used glyphs.
-- [ ] Missing-font, unresolvable-asset, and unsupported-script conditions are compile-time errors, not silent fallbacks.
-- [ ] `::: script` blocks produce no output.
-- [ ] `::: @pdf` content blocks emit; `::: @web` and `::: @email` blocks do not.
-- [ ] `@pdf`-qualified rule blocks in `::: css` and override blocks in `::: theme` are applied; tokens are inlined as values, not as `var()` references.
-- [ ] Page geometry honors `@page`-equivalent settings from `::: theme` / `::: meta`.
+- [ ] AC1: A `.papur` document compiles to a valid, Tagged PDF via the `pdf` target with no network access performed at any point during compilation.
+- [ ] AC2: Headings, lists, tables, and images appear in the PDF structure tree with correct reading order and propagated alt text.
+- [ ] AC3: The layout pass produces a serializable / inspectable box tree, with unit tests asserting box positions independent of PDF byte output.
+- [ ] AC4: A document longer than one page breaks correctly: no stranded headings, table headers repeat across page boundaries, `break-inside: avoid` is honored.
+- [ ] AC5: Standard-14 fonts emit with no embedding; author-supplied TrueType / OpenType fonts embed as subsets containing only used glyphs.
+- [ ] AC6: Missing-font, unresolvable-asset, and unsupported-script conditions are compile-time errors, not silent fallbacks.
+- [ ] AC7: `::: script` blocks produce no output.
+- [ ] AC8: `::: @pdf` content blocks emit; `::: @web` and `::: @email` blocks do not.
+- [ ] AC9: `@pdf`-qualified rule blocks in `::: css` and override blocks in `::: theme` are applied; tokens are inlined as values, not as `var()` references.
+- [ ] AC10: Page geometry honors `@page`-equivalent settings from `::: theme` / `::: meta`.
 
 ## Applicable Rules
 

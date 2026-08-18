@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 10
 ---
 
 # 009 — Multi-Target Output
@@ -55,15 +56,15 @@ The compile target is supplied at compile time (CLI flag, build config, API para
 
 ## Acceptance Criteria
 
-- [ ] One parser pass produces one AST that can be walked by any registered emitter.
-- [ ] A block with no `@target` qualifier is emitted for every target.
-- [ ] A block qualified `::: @web` is emitted only when the compile target is web.
-- [ ] A block qualified `::: @pdf` is emitted only when the compile target is pdf.
-- [ ] A block qualified `::: @email` is emitted only when the compile target is email.
-- [ ] The `::: script` layer is silently omitted from pdf, email, and plain target output.
-- [ ] Adding a new target emitter does not require changes to the parser or the AST.
-- [ ] A prose-only source — a single content block per [001-file-format](../001-file-format/spec.md) — emits content for every target.
-- [ ] Multiple `::: css` or `::: script` blocks are emitted in document (source) order, preserving the order that [001-file-format](../001-file-format/spec.md) exposes.
+- [ ] AC1: One parser pass produces one AST that can be walked by any registered emitter.
+- [ ] AC2: A block with no `@target` qualifier is emitted for every target.
+- [ ] AC3: A block qualified `::: @web` is emitted only when the compile target is web.
+- [ ] AC4: A block qualified `::: @pdf` is emitted only when the compile target is pdf.
+- [ ] AC5: A block qualified `::: @email` is emitted only when the compile target is email.
+- [ ] AC6: The `::: script` layer is silently omitted from pdf, email, and plain target output.
+- [ ] AC7: Adding a new target emitter does not require changes to the parser or the AST.
+- [ ] AC8: A prose-only source — a single content block per [001-file-format](../001-file-format/spec.md) — emits content for every target.
+- [ ] AC9: Multiple `::: css` or `::: script` blocks are emitted in document (source) order, preserving the order that [001-file-format](../001-file-format/spec.md) exposes.
 
 ## Open Questions
 

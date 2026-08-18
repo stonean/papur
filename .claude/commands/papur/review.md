@@ -14,23 +14,34 @@ when MUST violations are present.**
 which audits **artifacts against each other**. Both should pass before a spec
 advances to `done`.
 
+## Purpose
+
+Quality gate before `done`: audit the feature's implementation against the project's rule files across five dimensions (security, reuse, quality, efficiency, simplicity), record the findings in `specs/NNN/review.md`, and set the spec's `review.blocking` frontmatter so `/papur:implement`, `/papur:analyze`, and the CI hook can hold the spec out of `done` while MUST violations stand. Waivers (with recorded justification) are the sanctioned escape.
+
+## Scope Boundaries
+
+- Reads the target spec, its `plan.md` (for Affected Files), the in-scope source files, the selected rule files, `AGENTS.md`, and `.ductus/config.toml`; diffs `specs/inbox.md` over the review window. Do NOT review files outside the resolved scope, and do NOT introduce review criteria from outside the project's rule files and `AGENTS.md`.
+- Writes exactly three artifacts: `specs/NNN/review.md`, the target spec's frontmatter `review:` block, and — when the run recorded any observations — one `specs/inbox.md` bullet per observation (all three via `write-review`); with `--waive`, appends a waiver entry; with `--fix`, applies auto-fixable findings to the working tree. No other files are modified — status transitions belong to `/papur:implement`.
+- Reference: §runtime-host-integration, §brownfield-inbox, §text-first-artifacts (constitution loaded by `/papur:target` — do not re-read).
+
 ## Inputs
 
 - **Target** — the current `/papur:target` feature, or every feature with
   status `in-progress` or `done` when invoked with `--all`.
 - **Rules** — every file under the project's rule-file directory
-  (`framework/rules/` in govern's own repo, `specs/rules/` in adopter
-  projects) selected by the suffix-based discovery in §Behavior step 5,
-  loaded by reference. RFC 2119 language is authoritative:
+  (`framework/rules/` in ductus's own repo, `specs/rules/` in adopter
+  projects) selected by the suffix-based discovery in step 2
+  (`discover-rule-files`); their content is the authoritative review
+  criteria. RFC 2119 language is authoritative:
   **MUST/MUST NOT** are blocking violations, **SHOULD/SHOULD NOT** are
   advisory.
 - **Scope** — files referenced by the target's `plan.md` under `Affected Files`,
-  plus any files modified since the spec advanced to `in-progress` (whichever
-  set is larger). `specs/inbox.md` is also read (diffed against `diff-base`) to
-  surface issues captured during the work window — see §Behavior step 4.
-- **Config** — three `.govern.toml` keys influence this command:
+  unioned with any files modified since the spec advanced to `in-progress`.
+  `specs/inbox.md` is also read (diffed against `diff-base`) to
+  surface issues captured during the work window — see step 1 (`compute-review-scope`).
+- **Config** — three `.ductus/config.toml` keys influence this command:
   - `[review] tech-stack-verified` (boolean, default `false`): when
-    `true`, the tech-stack alignment check (see Behavior step 1) is
+    `true`, the tech-stack alignment check (see step 1) is
     skipped on every run until the operator clears the key. Set
     automatically (with operator confirmation) on the first successful
     alignment check.
@@ -41,17 +52,19 @@ advances to `done`.
     required `reason` field (free-text justification; trimmed length
     ≥ 16 Unicode codepoints). Files listed here are excluded from
     rule-file selection regardless of stack detection. Consulted in
-    Behavior step 5. Reason is mandatory — it is the audit trail for
-    the override.
+    step 2 (`discover-rule-files`). Reason is mandatory — it is the
+    audit trail for the override.
   - `[rules] surfaces` (array of strings, default unset): the project's
     rule surfaces, members in `{"backend", "frontend"}` (full-stack lists
     both; `*-cross.md` files are unconditional and not members). When set,
-    it is the source of truth for surface selection in Behavior step 5 and
-    replaces stack detection; when unset, step 5 falls back to the detected
-    stack. The **empty list** (`[]`) is valid and means cross-only (not
-    the same as unset); an unrecognized member (including `"cross"`) or a
-    non-list value fails fast in Behavior step 5. Collected and persisted
-    by `/govern` (`govern.md` §Collect Project Inputs).
+    it is the source of truth for surface selection in step 2
+    (`discover-rule-files`) and replaces stack detection; when unset, step 2
+    falls back to the detected stack (and with no detected surfaces supplied,
+    the primitive loads **all** recognized surfaces). The **empty list**
+    (`[]`) is valid and means cross-only (not the same as unset); an
+    unrecognized member (including `"cross"`) or a non-list value fails fast
+    in step 2. Collected and persisted
+    by `/ductus` (`ductus.md`, **Collect Project Inputs**).
 
 ## Flags
 
@@ -78,9 +91,25 @@ can advance to `done`. The recommended sequence is:
 `/papur:implement` MUST NOT mark a spec `done` while the target's `review.md`
 records `must-violations: > 0`. See [Blocking semantics](#blocking-semantics).
 
-## Behavior
+## Instructions
 
-For each targeted feature, in order:
+> **For agent runtimes**: the Invoke steps below call the MCP tools of the ductus runtime; the host-integration contract — bare↔prefixed tool names, lazy ToolSearch schema fetch, the no-shell-utilities rule, and the two-paths guarantee — lives once in the constitution, §runtime-host-integration. Before the server is registered — the window between acquisition and the restart that loads it — walk the same prose using the host file-reading tools (Read, Edit, Write).
+
+Run once per targeted feature (every in-progress or done spec under `--all`, otherwise the current `/papur:target`), in order. Resolve a `[feature]` argument through `resolve-feature` (exact name / number / unique partial slug), and enumerate the `--all` set from `dashboard`'s per-spec status inventory (`specs[].status ∈ {in-progress, done}`) rather than a directory scan. The detailed walk — rule-selection notices, waiver semantics, the report skeleton, and the pass definitions — lives under the Markdown-only reference section below.
+
+1. Invoke `compute-review-scope` to resolve the diff base (the commit the spec advanced to in-progress at, or a `--since` override), the review file scope (the **union** of the plan's Affected Files and the files modified since the diff base — both sets, because either alone can omit what the review exists to look at), and the inbox additions captured in that window. When the scope is empty, jump straight to the write-review step (step 9) — it emits the nothing-to-review-yet, non-blocking report. Otherwise confirm tech-stack alignment first (host judgment, not a primitive): read the active config file; when its `[review] tech-stack-verified` flag is true, skip the check; else compare the AGENTS.md Tech Stack section against the code in scope, halting with the tech-stack-misalignment message on a mismatch, and — on success — confirm before persisting the flag (the same confirm-before-write gate the other pipeline steps use; see the tech-stack alignment step in the markdown-only reference) and write `[review] tech-stack-verified = true` to the **active config file** (the newest existing of `.ductus/config.toml`, `.govern/config.toml`, or the legacy root `.govern.toml`, else `.ductus/config.toml`; specs 042 and 049 — a write outside the `/ductus` migrations never creates a partial `.ductus/config.toml` alongside a lingering older file). Only the flag read is deterministic — the alignment judgment stays with the host.
+2. Invoke `discover-rule-files` to select this run's rule files — suffix classification, the `[rules] surfaces` selection, and the disabled-rule-files filter — and emit the ordered notice lines it returns verbatim.
+3. <!-- llm:performReview --> Run the **security** pass over the in-scope files against the loaded security rules, returning one finding per violation (rule id, severity, file, line range, confidence, explanation).
+4. <!-- llm:performReview --> Run the **reuse** pass: flag logic that duplicates existing utilities or belongs in shared code.
+5. <!-- llm:performReview --> Run the **quality** pass: detect bugs, missing error handling, unhandled edge cases, and contract violations; low-confidence findings are recorded separately and do not block.
+6. <!-- llm:performReview --> Run the **efficiency** pass: flag N+1 queries, repeated work, and unbounded loops over user-controlled input.
+7. <!-- llm:performReview --> Run the **simplicity** pass: flag overengineering, premature abstraction, and dead branches; mark a finding auto-fixable when a simpler form is mechanically derivable. A dimension-restricting flag (`--security` / `--simplicity` / `--quality`) skips the unselected passes.
+8. Invoke `process-waivers` to classify the spec's `review.waivers` against the findings the passes just accumulated (apply / expire / retain / malformed / duplicate), emitting each notice it returns. **On a dimension-restricted run (`--security` / `--simplicity` / `--quality`), pass the skipped dimensions as `skipped-passes`** so a waiver whose rule did not fire is _retained_, not expired — the partial run cannot see the dimensions it didn't run, so it must not prune their waivers. The applied set is excluded from the blocking count; the expired set is dropped on the next write; the retained set is left in the frontmatter untouched. On an unrestricted run `skipped-passes` is empty and a waiver expires only when its file is gone or its rule genuinely no longer fires.
+9. Invoke `write-review` with the accumulated pass findings, the accumulated pass **observations**, the waiver results (`applied` / `expired`), and the scope to render `specs/NNN-feature/review.md`, update the spec `review:` frontmatter block, and capture each observation to `specs/inbox.md`. Supply the required scalars the primitives don't produce — `reviewed-at` (the current UTC timestamp) and `reviewed-against` (HEAD sha), both host-provided (as the session-write's `set-at` is); `diff-base` comes from step 1. It applies the cross-pass dedup (highest-severity-wins on rule + file + overlapping range), buckets findings into MUST / SHOULD / low-confidence / waived, prunes expired waivers (preserving any adopter-authored waiver fields on the survivors), records the skipped passes, renders the observations, and sets blocking when MUST violations remain. With `--fix`, apply the auto-fixable findings, re-run the affected passes, and invoke `write-review` a second time for the post-fix counts.
+
+## Markdown-only reference
+
+The numbered Instructions above are the deterministic path — the runtime's primitives own the rule-file selection, waiver arithmetic, scope resolution, and report scaffolding, and the five passes cross the boundary at the `performReview` extension point. When no runtime is available, walk the detailed procedure below by hand, for each targeted feature, in order.
 
 ### 1. Resolve target and scope
 
@@ -93,7 +122,8 @@ For each targeted feature, in order:
    findings across all five passes, `blocking: false`, and exit `0` — there
    is nothing to review yet. Skip steps 4–5 and the rest of this run.
 4. **Tech-stack alignment check.**
-   - Read `.govern.toml`. If `[review] tech-stack-verified = true`, skip to
+   - Read the active config file (resolution rule in Instructions step 1;
+     spec 042). If `[review] tech-stack-verified = true`, skip to
      step 5.
    - Otherwise, read `AGENTS.md`'s `Tech Stack` section and inspect the file
      scope (extensions, imports, runtime/manifest markers). Confirm the
@@ -101,13 +131,15 @@ For each targeted feature, in order:
      missing or empty `Tech Stack` section, or an inconsistency between
      documentation and code, halts the run with the
      [tech-stack-misalignment](#blocking-message) message and exits `1`.
-   - On a successful check, prompt the operator once: _"Tech-stack
-     alignment confirmed. Persist this so future runs skip the check?
-     (Y/n)"_. On `Y`, write `[review] tech-stack-verified = true` to
-     `.govern.toml`. On `n` or skip, the check runs again on the next
+   - On a successful check, prompt the operator once (routing the prompt
+     through `gate-confirm` on the runtime path, as the other
+     confirm-before-write pipeline steps do): _"Tech-stack alignment
+     confirmed. Persist this so future runs skip the check? (Y/n)"_. On
+     `Y`, write `[review] tech-stack-verified = true` to the active config
+     file (same resolution as Instructions step 1). On `n` or skip, the check runs again on the next
      invocation. To re-run the check after a stack change, the operator
      removes the line manually — `/papur:review` does not auto-reset.
-5. Discover rule files by suffix. List `framework/rules/*.md` in govern's
+5. Discover rule files by suffix. List `framework/rules/*.md` in ductus's
    own repository, or `specs/rules/*.md` in adopter projects. For each
    file, classify by basename suffix:
    - `*-backend.md` → backend surface
@@ -120,7 +152,7 @@ For each targeted feature, in order:
      rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md
      ```
 
-   Determine the **surface selection** for this run. Read `.govern.toml`
+   Determine the **surface selection** for this run. Read `.ductus/config.toml`
    `[rules] surfaces` (see [Inputs](#inputs)):
 
    - **Set to a valid list** (every member in `{backend, frontend}`) —
@@ -151,7 +183,7 @@ For each targeted feature, in order:
    In every non-error case, keep every unrecognized-suffix file
    unconditionally.
 
-   Then apply the **disabled-rule-files filter**. Read `.govern.toml`
+   Then apply the **disabled-rule-files filter**. Read `.ductus/config.toml`
    `[[review.disabled-rule-files]]` (see [Inputs](#inputs)). For each
    entry, in list order:
 
@@ -160,12 +192,15 @@ For each targeted feature, in order:
      it from the set and emit one line:
 
      ```text
-     disabled-rule-file: <filename> — <reason> (.govern.toml)
+     disabled-rule-file: <filename> — <reason> (<config-file>)
      ```
 
-     Collapse internal whitespace in `reason` (including newlines from
-     TOML multi-line strings) to single spaces before emitting — the
-     notice is single-line by contract.
+     `<config-file>` is the repo-relative resolved config file the
+     disable came from — `.ductus/config.toml`, or the legacy root
+     `.govern.toml` on a pre-migration layout. Collapse internal
+     whitespace in `reason` (including newlines from TOML multi-line
+     strings) to single spaces before emitting — the notice is
+     single-line by contract.
 
    - **No-op notice (non-selected match).** `file` matches a
      basename in the rule-file directory but the file was NOT in the
@@ -191,7 +226,7 @@ For each targeted feature, in order:
    - **Malformed warning.** Entry is missing `file` or `reason`, or
      `reason`'s trimmed length is < 16 Unicode codepoints. Skip the
      entry (no file is dropped) and emit one line naming the offending
-     index (same pattern as §Malformed and duplicate waivers below):
+     index (same pattern as **Malformed and duplicate waivers** below):
 
      ```text
      malformed disabled-rule-file at review.disabled-rule-files[N]: <reason>
@@ -209,7 +244,7 @@ For each targeted feature, in order:
 
    All four warning forms emit to stdout and **do not affect the exit
    code**. `/papur:review`'s exit status is driven exclusively by MUST
-   violations (see [Output](#output)). `.govern.toml` hygiene is a
+   violations (see [Output](#output)). `.ductus/config.toml` hygiene is a
    separate concern.
 
    Finally, emit a single stdout line naming what was selected:
@@ -257,6 +292,12 @@ text, and a one-sentence explanation of how the code violates it. **Do not
 flag patterns that are not in the loaded rules** — the project's rule set is
 authoritative.
 
+That rule holds for every pass below, and it is not a reason to drop what you
+noticed: anything real that matches no loaded rule is an **observation**, and
+every pass may return them alongside its findings — see the Observations
+rules under [4. Write `review.md`](#4-write-reviewmd). Recording one is what
+captures it, so there is nothing separate to remember.
+
 #### Reuse pass
 
 Identify logic that duplicates existing utilities or that should be extracted
@@ -267,9 +308,11 @@ contradicts an explicit MUST in `AGENTS.md` `Boundaries`.
 #### Quality pass
 
 Detect bugs, missing error handling, unhandled edge cases, off-by-one errors,
-and contract violations against `specs/errors.md`. Each finding includes a
-confidence score 0–100. Findings below 80 confidence are recorded as
-`low-confidence` and excluded from the blocking count.
+and contract violations against `specs/errors.md`. Each finding carries a
+`confidence` tier — `high` or `low` (the string the `write-review` contract
+consumes, compared case-insensitively). A `low`-confidence finding is recorded
+in the Low-confidence section regardless of severity and is excluded from the
+blocking count; use it when the finding is plausible but unconfirmed.
 
 #### Efficiency pass
 
@@ -310,7 +353,7 @@ skipped-passes: []
 
 ## MUST violations (blocking)
 
-<empty section when none; otherwise one heading per finding>
+<one heading per finding; `*None.*` when the section is empty>
 
 ## SHOULD violations (advisory)
 
@@ -318,14 +361,20 @@ skipped-passes: []
 
 ## Waived findings
 
-## Captured issues (pending /papur:groom)
+## Captured issues
 
-<empty section when none; otherwise one bullet per item appended to specs/inbox.md since diff-base>
+<one bullet per item appended to specs/inbox.md since diff-base; `*None.*` when empty>
+
+## Observations
+
+<one bullet per observation this run recorded; `*None.*` when empty>
 
 ## Skipped passes
 
-<empty when none>
+<`*None.*` when none>
 ```
+
+Every empty section renders the literal `*None.*` line — the `write-review` primitive emits it, and the markdown-only path writes the same so the two paths produce byte-identical reports. The **Captured issues** and **Observations** headings carry no suffix.
 
 The **Captured issues** section surfaces issues the agent recorded to
 `specs/inbox.md` automatically during the work being reviewed (per
@@ -339,6 +388,66 @@ and do **not** change the exit code. The section is the "presented as part of
 the review" half of the capture contract: it makes mid-task captures visible at
 the gate so none is forgotten. When the inbox shows no additions in the window,
 write `captured-issues: 0` and leave the section empty.
+
+A captured issue is a **mirror of an inbox line, not a second home for it**.
+The inbox is the live list; this section is a snapshot of what was added during
+one review window. So when a re-review finds an item no longer in
+`specs/inbox.md` — `/papur:groom` routed it, or the work resolved it in
+window — say so on the entry (tick its checkbox, name the commit or scenario
+that closed it) and recount `captured-issues` against what is still outstanding.
+Leaving a groomed item written as open is the failure mode this rule exists to
+prevent: the snapshot ages into a list of issues that read as pending years
+after they were closed, and a reader cannot tell which are real without
+re-deriving every one against the inbox.
+
+The **Observations** section is the home for something the reviewer judged
+real that maps to **no loaded rule**. Inventing a rule for it is not the answer
+— the rule set is authoritative — and the free-text Summary is not either,
+because `write-review` regenerates the Summary wholesale on the next run and it
+is per-spec, so a cross-cutting note filed there is both erased and misfiled.
+An observation is **not** a finding: it never enters the
+`must-violations` / `should-violations` / `low-confidence` counts, never
+affects `review.blocking`, and never changes the exit code. Each entry carries
+its own one-line text and, optionally, the path it anchors to. Leading the text
+with a category (`security` / `leak` / `convention` / `bug` / `perf` / `other`)
+matches the inbox template's auto-capture form and helps `/papur:groom`
+route it, but nothing parses it.
+
+**Recording an observation is capturing it.** For each entry, the same call
+that writes the section appends a bullet to `specs/inbox.md`:
+
+```text
+- [ ] {text} — `{path}` (captured during review of {NNN-feature})
+```
+
+with the path clause omitted when the observation has no path. The append is
+dedup-guarded on that whole rendered line, so re-running a review over an
+unchanged repo appends nothing while the report still renders the section —
+the report describes _this run_. On the markdown-only path, write the **inbox
+bullet first and the report section second**, and halt without writing
+`review.md` if the inbox cannot be written. That order is the point of the
+whole mechanism: a report whose Observations section claims a capture that did
+not happen is the defect this replaces, one level down. There is deliberately
+no path that records an observation in the report without also recording it in
+the inbox, and no separate `append-inbox` call to forget. An observation
+supplied to a run whose scope is empty still captures — the reviewer's
+judgment is the input, not the diff.
+
+Observations sit next to **Captured issues** because the two are complements:
+Captured issues mirrors what the inbox _already_ held over the review window,
+while Observations is what this run added to it. An observation whose subject
+later becomes a real rule finding needs nothing special — the finding counts,
+and the observation is the reviewer's to drop on the next run.
+
+The same reconciliation applies to the finding sections. A SHOULD or
+low-confidence entry whose disposition is "keep as-is" belongs under **Waived
+findings** with its rationale, not under its original heading — an accepted
+trade-off left filed as a violation is indistinguishable from unfinished work.
+An entry fixed after the report was written keeps its place, gains a
+**Status** line naming the commit or scenario that closed it, and drops out of
+the frontmatter count. The counts state what is _outstanding_, so they and the
+body must agree; do not invent frontmatter fields to track dispositions —
+`write-review` emits a fixed field set and would drop them on the next run.
 
 Each finding follows this shape:
 
@@ -379,19 +488,32 @@ review:
   reviewed-against: <sha>
   must-violations: 0
   should-violations: 3
+  low-confidence: 2
   blocking: false
 ```
 
 `blocking: true` when `must-violations > 0`. This is the field other commands
-read.
+read. (`write-review` writes `last-run`, `reviewed-against`, `must-violations`,
+`should-violations`, `low-confidence`, and `blocking`, plus the `waivers` list
+when present.)
 
 ## Blocking semantics
 
 A spec MUST NOT advance from `in-progress` to `done` while its frontmatter
 records `review.blocking: true`. This is enforced as follows:
 
-1. **`/papur:implement`** — before marking `status: done`, reads
-   `review.blocking`. If `true` (or `review.last-run` is missing), halts with:
+1. **`/papur:implement`** — before marking `status: done`, its `check-review-gate`
+   runs three checks in order, first failure wins. First, the feature
+   directory's markdown lint; a violation halts before the review block is
+   consulted. Then the `review:` block: a missing/null `review.last-run` (or
+   absent block) halts with
+
+   ```text
+   blocked: spec has not been reviewed — run /papur:review before completing
+   ```
+
+   and only `review.blocking: true` halts with the MUST-violations message plus
+   waive guidance:
 
    ```text
    blocked: spec has N MUST violation(s) — see specs/NNN-feature/review.md
@@ -407,7 +529,9 @@ records `review.blocking: true`. This is enforced as follows:
 3. **CI hook** — the shipped GHA template at
    `framework/templates/ci/adopter-generators.yml` fails when any
    spec at `status: done` has `review.blocking: true` or missing
-   `review.last-run`.
+   `review.last-run`. A `done` spec with **no** `review:` block at all is
+   grandfathered (it predates `/papur:review`) and exempt — matching
+   `/papur:analyze`'s own grandfather rule.
 
 This implements the constitution's quality gate via three mutually reinforcing
 mechanisms rather than relying on any single one — consistent with the
@@ -427,7 +551,7 @@ blocked: tech-stack alignment failed — AGENTS.md Tech Stack {missing | inconsi
 
 reconcile AGENTS.md Tech Stack with the implementation, then re-run /papur:review.
 to skip this check on future runs after manual reconciliation, add
-[review] tech-stack-verified = true to .govern.toml.
+[review] tech-stack-verified = true to .ductus/config.toml.
 ```
 
 ## Waivers
@@ -450,8 +574,9 @@ review:
       waived-by: <git config user.email>
 ```
 
-Waived findings drop out of `must-violations` count and into a separate
-`waived-violations` count. They appear in `review.md` under the **Waived
+Waived findings drop out of the `must-violations` count (there is no separate
+`waived-violations` frontmatter field; `write-review` reports the waived count
+only in its transient result). They appear in `review.md` under the **Waived
 findings** section. They survive across `/papur:review` runs as long as the
 rule ID and file location still match; if either changes, the waiver expires
 and the finding re-blocks. Line numbers are not part of the waiver anchor —
@@ -460,8 +585,13 @@ expire the waiver.
 
 ### Per-run waiver processing
 
-At the start of every `/papur:review` run, before counting findings into
-`must-violations`, walk `review.waivers` and process each entry:
+On every `/papur:review` run, after the review passes have produced their
+findings (see **Run review passes**) and before counting them into `must-violations`
+or writing `review.md`, walk `review.waivers` and classify each entry against
+those findings. A waiver can only be judged against findings that exist — when
+an empty scope skips the passes entirely, leave the waivers untouched; and on
+a dimension-restricted run, waivers anchored to skipped dimensions apply
+unchanged rather than expiring:
 
 1. **Apply** when the file exists at the anchored path AND the rule still
    fires there. The finding appears under **Waived findings** in
@@ -503,7 +633,9 @@ At the start of every `/papur:review` run, before counting findings into
 The `review.waivers` list follows the §text-first-artifacts open-schema
 rule. Adopters MAY add fields (e.g., `co-waived-by`, `approved-by-team`,
 `ticket`) to enforce org-specific waiver policy in their own CI; `/papur:review`
-and `/papur:analyze` will not error on unknown fields.
+and `/papur:analyze` will not error on unknown fields, and `write-review`
+preserves them verbatim on a surviving waiver when it re-renders the block, so
+an org policy field is never dropped by a later review run.
 
 ## Auto-fix scope
 
@@ -571,12 +703,12 @@ never of session state.
 ## Notes for adopters
 
 - Projects that customize shipped rule files (e.g.,
-  `specs/rules/security-backend.md`) pin them in `.govern.toml`
-  `[pinned] files` to prevent `/govern` from overwriting their additions.
+  `specs/rules/security-backend.md`) pin them in `.ductus/config.toml`
+  `[pinned] files` to prevent `/ductus` from overwriting their additions.
   `/papur:review` reads whatever is on disk — pinned or not.
 - Files inside the rule-file directory (`specs/rules/` in adopter
-  projects; `framework/rules/` in govern's own repo) are auto-discovered
-  by directory walk (see §Behavior step 5). No `AGENTS.md` reference is
+  projects; `framework/rules/` in ductus's own repo) are auto-discovered
+  by directory walk (see step 2, `discover-rule-files`). No `AGENTS.md` reference is
   required. Adding a new file at `specs/rules/<domain>-{backend,frontend,cross}.md`
   with a recognized suffix is the only step needed; the suffix selects
   which stacks load it.
@@ -586,13 +718,13 @@ never of session state.
   arbitrary adopter paths, so an explicit `AGENTS.md` reference is the
   discovery signal for these files.
 - A rule file with an unrecognized suffix loads for every stack and
-  emits a one-line stdout warning (see §Behavior step 5). The default
+  emits a one-line stdout warning (see step 2, `discover-rule-files`). The default
   is "load + warn," never "silent skip." Rename to one of the closed
   suffixes — `-backend.md`, `-frontend.md`, `-cross.md` — to silence
   the warning.
 - A rule file can be explicitly excluded from a given project's review
-  via `.govern.toml` `[[review.disabled-rule-files]]` (see
-  [Inputs](#inputs) for the schema and §Behavior step 5 for the
+  via `.ductus/config.toml` `[[review.disabled-rule-files]]` (see
+  [Inputs](#inputs) for the schema and step 2 (`discover-rule-files`) for the
   filter behavior). The override is project-wide and requires a
   mandatory `reason` — the reason is the audit trail. Use this when
   the stack-derived selection is correct (the rule file applies) but

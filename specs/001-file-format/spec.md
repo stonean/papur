@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 9
 ---
 
 # 001 — File Format
@@ -103,14 +104,14 @@ These are recommendations for humans, not parser rules — ordering never change
 
 ## Acceptance Criteria
 
-- [x] Parser accepts files only when the extension is exactly `.papur`.
-- [x] Filename middle segments (`.css.papur`, `.js.papur`, `.theme.papur`) do not change parser behavior — every file is parsed identically.
-- [x] Typed content outside of a fence is a parse error in strict mode; in lenient mode it is parsed as content prose.
-- [x] `---` YAML frontmatter at the top of a file is treated as an implicit `::: meta` block.
-- [x] A file containing only prose (no fences, no frontmatter) parses successfully into a single content block.
-- [x] Multiple `::: css` or `::: script` blocks are accepted and exposed in document (source) order.
-- [x] Multiple `::: theme` or `::: meta` blocks are accepted and merged key by key, with later keys winning.
-- [x] An empty block of any type parses successfully and contributes nothing to the output.
+- [x] AC1: Parser accepts files only when the extension is exactly `.papur`.
+- [x] AC2: Filename middle segments (`.css.papur`, `.js.papur`, `.theme.papur`) do not change parser behavior — every file is parsed identically.
+- [x] AC3: Typed content outside of a fence is a parse error in strict mode; in lenient mode it is parsed as content prose.
+- [x] AC4: `---` YAML frontmatter at the top of a file is treated as an implicit `::: meta` block.
+- [x] AC5: A file containing only prose (no fences, no frontmatter) parses successfully into a single content block.
+- [x] AC6: Multiple `::: css` or `::: script` blocks are accepted and exposed in document (source) order.
+- [x] AC7: Multiple `::: theme` or `::: meta` blocks are accepted and merged key by key, with later keys winning.
+- [x] AC8: An empty block of any type parses successfully and contributes nothing to the output.
 
 ## Open Questions
 

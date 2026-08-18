@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 9
 ---
 
 # 014 — Accessibility
@@ -62,14 +63,14 @@ This is the load-bearing distinction: accessibility (WCAG, ARIA, HTML semantics)
 
 ## Acceptance Criteria
 
-- [ ] Strict mode is on by default; the compiler exits non-zero on any lint violation.
-- [ ] `--lenient` downgrades violations to warnings.
-- [ ] `<img>` without `alt` is a lint error; `<img>` with `alt=""` (decorative) is valid.
-- [ ] Heading-level skip (H2 → H4 with no H3) is a lint error.
-- [ ] Same-role color/background pairs that fall below WCAG AA contrast emit a lint error.
-- [ ] A role matching a bundled pattern (e.g., `.dialog`) auto-wires the documented ARIA, keyboard handlers, and focus management.
-- [ ] Web output includes the skip link, viewport meta, and `lang` attribute without author opt-in.
-- [ ] A document with `::: meta` missing `lang` emits a warning (not a hard error).
+- [ ] AC1: Strict mode is on by default; the compiler exits non-zero on any lint violation.
+- [ ] AC2: `--lenient` downgrades violations to warnings.
+- [ ] AC3: `<img>` without `alt` is a lint error; `<img>` with `alt=""` (decorative) is valid.
+- [ ] AC4: Heading-level skip (H2 → H4 with no H3) is a lint error.
+- [ ] AC5: Same-role color/background pairs that fall below WCAG AA contrast emit a lint error.
+- [ ] AC6: A role matching a bundled pattern (e.g., `.dialog`) auto-wires the documented ARIA, keyboard handlers, and focus management.
+- [ ] AC7: Web output includes the skip link, viewport meta, and `lang` attribute without author opt-in.
+- [ ] AC8: A document with `::: meta` missing `lang` emits a warning (not a hard error).
 
 ## Open Questions
 

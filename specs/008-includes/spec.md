@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 8
 ---
 
 # 008 — Includes
@@ -50,13 +51,13 @@ The decision is deliberate: parameterized includes are templating, and templatin
 
 ## Acceptance Criteria
 
-- [ ] A top-level `@include path.papur` inlines the entire included file's content at the include site.
-- [ ] An `@include` inside `::: css` pulls only `::: css` content from the included file.
-- [ ] An `@include` inside `::: script` pulls only `::: script` content from the included file.
-- [ ] An `@include` inside top-level prose (no fence) pulls only the content prose from the included file.
-- [ ] Cyclic includes are a parse error.
-- [ ] An include path that does not end in `.papur` is a parse error.
-- [ ] Includes do not introduce a new scope — roles and ids from the included file are merged into the including file's namespace.
+- [ ] AC1: A top-level `@include path.papur` inlines the entire included file's content at the include site.
+- [ ] AC2: An `@include` inside `::: css` pulls only `::: css` content from the included file.
+- [ ] AC3: An `@include` inside `::: script` pulls only `::: script` content from the included file.
+- [ ] AC4: An `@include` inside top-level prose (no fence) pulls only the content prose from the included file.
+- [ ] AC5: Cyclic includes are a parse error.
+- [ ] AC6: An include path that does not end in `.papur` is a parse error.
+- [ ] AC7: Includes do not introduce a new scope — roles and ids from the included file are merged into the including file's namespace.
 
 ## Open Questions
 

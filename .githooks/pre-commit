@@ -8,4 +8,4 @@ cd "$(git rev-parse --show-toplevel)"
 
 # Keeps govern's generated artifacts (spec deps, etc.) in sync. /govern updates
 # this script on every run; do not edit it.
-./.githooks/govern-pre-commit
+./.githooks/ductus-pre-commit

@@ -8,6 +8,7 @@ review:
   should-violations: 0
   low-confidence: 0
   blocking: false
+next-criterion: 7
 ---
 
 # 012 — Email Target
@@ -48,12 +49,12 @@ The email emitter rewrites the structural layer to the table-based idiom email c
 
 ## Acceptance Criteria
 
-- [ ] The email emitter produces a single HTML document with all CSS inlined into `style` attributes.
-- [ ] `::: grid` fenced divs emit as nested tables.
-- [ ] No `<style>` block or external stylesheet is emitted; every style is inlined.
-- [ ] `var()` references do not appear in the output; all theme tokens are inlined as values.
-- [ ] `::: script` blocks produce no output.
-- [ ] `::: @email` content blocks emit; other target-qualified blocks do not.
+- [ ] AC1: The email emitter produces a single HTML document with all CSS inlined into `style` attributes.
+- [ ] AC2: `::: grid` fenced divs emit as nested tables.
+- [ ] AC3: No `<style>` block or external stylesheet is emitted; every style is inlined.
+- [ ] AC4: `var()` references do not appear in the output; all theme tokens are inlined as values.
+- [ ] AC5: `::: script` blocks produce no output.
+- [ ] AC6: `::: @email` content blocks emit; other target-qualified blocks do not.
 
 ## Open Questions
 
