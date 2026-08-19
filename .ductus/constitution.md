@@ -115,7 +115,9 @@ specs/
       {slug}.md          # One file per scenario
 ```
 
-The top-level directory name (`specs` above) is the documented default; a project may rename it via `.ductus/config.toml` `[paths] specs-root` (e.g. to avoid colliding with a sibling framework's `spec/`, like RSpec's). When the key is unset every command and the runtime default to `specs`, so an adopter who never sets it sees unchanged behavior. The literal `specs/` throughout this constitution and the command sources is that default; wherever a command or the runtime constructs a path under it, it resolves `[paths] specs-root` (spec 040).
+The top-level directory name (`specs` above) is the documented default; a project may rename it via `.ductus/config.toml` `[paths] specs-root` (e.g. to avoid colliding with a sibling framework's `spec/`, like RSpec's). When the key is unset every command and the runtime default to `specs`, so an adopter who never sets it sees unchanged behavior. The literal `specs/` throughout this constitution and the command sources is that default.
+
+**This is an instruction, not only a fact.** Wherever a command acts on a path under the spec root, substitute the configured name for the literal `specs/`. The primitives resolve `[paths] specs-root` themselves, so the substitution is the host's to perform on the markdown-only path — and it applies to every command, including ones added after this line. Commands reference this rule rather than restating it: seven copies had accumulated before spec 040 collapsed them here, and every copy was one more thing to keep in sync ([§drift-prevention](#drift-prevention)).
 
 <!-- §spec-requirements -->
 
@@ -468,8 +470,8 @@ The frontmatter schema applies to **spec files** (`spec.md`) and **scenario file
 | Field | Required | Type | Allowed values | Description |
 | --- | --- | --- | --- | --- |
 | `status` | yes | string | `draft`, `clarified`, `planned`, `in-progress`, `done` | Spec lifecycle state |
-| `dependencies` | yes | list of strings | spec slugs (e.g., `002-events`); empty list permitted | **Generated** by `.ductus/scripts/gen-spec-deps.sh` from inline markdown links to sibling specs in the body. Not hand-authored. Author opt-out: links under a `## See also` heading are treated as navigational and do not produce edges (`## References` remains a dep-producing section). |
-| `references` | no | list of `{service, spec}` entries | registered service alias + target `NNN-slug`; empty or absent permitted | **Generated** by `.ductus/scripts/gen-cross-service-refs.sh` from inline body links to a registered service's canonical repo URL. Not hand-authored, and **strictly distinct from `dependencies`** — informative cross-service navigation that never enters the blocking dependency graph (spec 030). |
+| `dependencies` | yes | list of strings | spec slugs (e.g., `002-events`); empty list permitted | **Generated** by the `derive-dependencies` runtime primitive from inline markdown links to sibling specs in the body. Not hand-authored. Author opt-out: links under a `## See also` heading are treated as navigational and do not produce edges (`## References` remains a dep-producing section). |
+| `references` | no | list of `{service, spec}` entries | registered service alias + target `NNN-slug`; empty or absent permitted | **Generated** by the `derive-references` runtime primitive from inline body links to a registered service's canonical repo URL. Not hand-authored, and **strictly distinct from `dependencies`** — informative cross-service navigation that never enters the blocking dependency graph (spec 030). |
 | `next-criterion` | no | integer | ≥ 1; absent means no criterion has been labelled yet | **Maintained by the runtime's labelling pass.** The `AC{n}` label the next acceptance criterion receives. Monotonically non-decreasing — deleting a criterion never lowers it — so a retired label is never reissued to a different requirement. Not hand-authored; the audit requires it to exceed every `AC{n}` label present in the body (spec 013). |
 
 #### Scenario files
@@ -487,7 +489,7 @@ Additional fields beyond those listed above are permitted and ignored by uninter
 `/ductus:analyze` checks frontmatter against this schema with the following severity:
 
 - **Hard fail** — frontmatter block missing on a spec or scenario file; frontmatter YAML malformed; `status` missing or not in the allowed set; `dependencies` missing or not a list; both `section` and the legacy `spec-ref` missing on a scenario.
-- **Advisory** — cross-reference checks; body inline links to sibling specs that are not yet in the generator-managed `dependencies` (informational — the next commit's `gen-spec-deps.sh` run will resolve).
+- **Advisory** — cross-reference checks; body inline links to sibling specs that are not yet in the generator-managed `dependencies` (informational — the next commit's `derive-dependencies` pass will resolve).
 - **Informational** — unknown fields present.
 
 Hard fails block the validation pass. Advisory and informational findings are reported but do not block.
@@ -568,6 +570,7 @@ For every kind of fact described in multiple places, one location is authoritati
 | Where contributor knowledge is recorded (git vs. per-user agent memory) | `framework/constitution.md` §drift-prevention (Shared knowledge stays in git) |
 | Open-state tell list and decision-drift check grammars | `specs/045-decision-state-drift-detection/data-model.md` |
 | Scenario→task referencing rule (what counts as a task referencing a scenario) | `specs/022-deterministic-runtime/data-model.md` (`scenario-consistency`) |
+| Spec-root resolution (substituting `[paths] specs-root` for the literal `specs/`) | `framework/constitution.md` §spec-phase |
 | Constitution content — what belongs in it, how it is organized, which rules adopters receive | `specs/050-constitution/spec.md` (a spec that changes *behavior* still amends the principle its change contradicts, in the same change) |
 
 When adding a new kind of fact that may be referenced from multiple documents, name its canonical source explicitly here.

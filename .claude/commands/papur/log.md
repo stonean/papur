@@ -19,7 +19,7 @@ This command does not require a session target — items in the inbox span the w
 
 - This command only appends a single line to `specs/inbox.md`. Do NOT modify any other file. Do NOT read or write source code, test files, specs, plans, or scenarios.
 - Do NOT walk the decision tree, classify the item, or suggest a spec — that is `/papur:groom`'s job. Keep the recording step fast and uninterpreted.
-- Reference: §brownfield-inbox (constitution loaded by `/papur:target` — do not re-read).
+- Reference: §brownfield-inbox, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
 
 ## Instructions
 
@@ -30,7 +30,7 @@ This command does not require a session target — items in the inbox span the w
 
 2. Invoke `append-inbox` with the item text to append `- [ ] {item text}` as a new checkbox bullet to `specs/inbox.md` (the checkbox form the inbox template and constitution §bug-handling document — inbox items clear by being done and removed). The create-if-missing semantics live in the primitive: when the file does not exist, it is created before the append (from the project inbox template when one is on disk, else with a minimal `# Inbox` heading). The item is a single line — recording stays fast and uninterpreted. The result's `item-count` field carries the new inbox total (comment/fence-aware) for the report.
 
-3. Invoke `lint-markdown` against the modified `specs/inbox.md`.
+3. Invoke `lint-markdown` against the inbox file step 2 actually wrote — the inbox under the configured `[paths] specs-root`, **not** a hardcoded `specs/inbox.md`. append-inbox resolves the root itself, so a literal here lints a path it never touched and reports clean on a file that does not exist.
 
 <!-- audit:ignore-promotion -->
 4. Report: the line that was added; the new total item count in the inbox (`append-inbox`'s `item-count` result); and the suggested next step: "Run `/papur:groom` when you're ready to walk the inbox and route items to their proper homes." **Stop here.** Do not start grooming or implementation. The user invokes `/papur:groom` explicitly.

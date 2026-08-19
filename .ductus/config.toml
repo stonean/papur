@@ -1,5 +1,5 @@
 [migrations]
-last_applied = "runtime-store-path"
+last_applied = "generator-primitives"
 
 [project]
 name = "papur"

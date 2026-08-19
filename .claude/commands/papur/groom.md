@@ -18,7 +18,7 @@ Use the session target from `.ductus/session.toml` if set, but groom operates ac
 
 - This command grooms inbox items — it creates scenario files, appends tasks, edits a matched spec's body when the operator confirms the spec-edit route (Step 3), sets the session target (`.ductus/session.toml`) when routing to an existing spec, and reopens a matched spec's frontmatter status `done → in-progress` when it adds a scenario to a `done` spec, but does NOT implement fixes. Do NOT read or modify source code or test files.
 - For each item, read only the spec file of the matching feature (for decision tree evaluation) and its `tasks.md` (for appending). Do NOT read plans, data models, or source code.
-- Reference: §bug-handling, §rules, §scenarios, §brownfield-inbox (constitution loaded by `/papur:target` — do not re-read).
+- Reference: §bug-handling, §rules, §scenarios, §brownfield-inbox, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
 
 ## Instructions
 
@@ -27,7 +27,7 @@ Use the session target from `.ductus/session.toml` if set, but groom operates ac
 Process items **one at a time** — do not batch or pre-process multiple items. Complete steps 2–8 for one item (decision, confirmation, writes, removal), then repeat from step 2 for the next; step 9 runs once after all items. The decision-tree detail, prompt wording, and write shapes live under the Markdown-only reference below.
 
 <!-- audit:ignore-promotion -->
-1. Check if `specs/inbox.md` exists. If it does not exist, stop and report: "No inbox file found at `specs/inbox.md`. Nothing to groom." Read `specs/inbox.md`; if the file has no list items (no `-` bullets outside HTML comments — the shared inbox grammar the inbox primitives use: `-` list items, checkbox or plain, with any lines inside `<!-- … -->` comments ignored, such as the template's `<!-- Rules: … -->` guidance), report: "Inbox is clean — no items to groom." and stop. Keep the file to preserve git history.
+1. Resolve the inbox path under the configured `[paths] specs-root` (default `specs`) — no primitive owns this read, so the resolution is the host's on **both** paths, and a hardcoded `specs/inbox.md` makes `/papur:groom` report an empty inbox for every project that renamed its spec root. Check if the resolved inbox exists. If it does not, stop and report: "No inbox file found at `{specs-root}/inbox.md`. Nothing to groom." Read it; if the file has no list items (no `-` bullets outside HTML comments — the shared inbox grammar the inbox primitives use: `-` list items, checkbox or plain, with any lines inside `<!-- … -->` comments ignored, such as the template's `<!-- Rules: … -->` guidance), report: "Inbox is clean — no items to groom." and stop. Keep the file to preserve git history.
 
 2. <!-- llm:routeInboxItem --> For each item in the inbox list, one routing round trip: display the item number, total remaining count, and item description, then walk the bug decision tree (§bug-handling; the **Groom decision tree** reference below) to choose exactly one of the five routes, naming the matched feature when the route targets an existing spec:
    - `rule` — a cross-cutting concern (four-indicator promotion checklist, §rules): recommend amending the covering rule file, or — when no rule file covers the domain — note that a new rule file is its own feature spec (out of scope), leave the item in the inbox, and ask whether to skip and continue. No write, no target.

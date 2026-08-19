@@ -22,7 +22,7 @@ Quality gate before `done`: audit the feature's implementation against the proje
 
 - Reads the target spec, its `plan.md` (for Affected Files), the in-scope source files, the selected rule files, `AGENTS.md`, and `.ductus/config.toml`; diffs `specs/inbox.md` over the review window. Do NOT review files outside the resolved scope, and do NOT introduce review criteria from outside the project's rule files and `AGENTS.md`.
 - Writes exactly three artifacts: `specs/NNN/review.md`, the target spec's frontmatter `review:` block, and — when the run recorded any observations — one `specs/inbox.md` bullet per observation (all three via `write-review`); with `--waive`, appends a waiver entry; with `--fix`, applies auto-fixable findings to the working tree. No other files are modified — status transitions belong to `/papur:implement`.
-- Reference: §runtime-host-integration, §brownfield-inbox, §text-first-artifacts (constitution loaded by `/papur:target` — do not re-read).
+- Reference: §runtime-host-integration, §brownfield-inbox, §text-first-artifacts, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
 
 ## Inputs
 

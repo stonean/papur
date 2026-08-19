@@ -33,7 +33,7 @@ Read `.ductus/session.toml`. If the session includes a `scenario` and `scenario-
 - Spec `status` is read from the YAML frontmatter at the top of the file. It is mutated by this command only on a back-edge (clarified+ → draft or done → in-progress).
 - For the impact display, this command may read sibling specs' frontmatter (only) under `specs/` to detect dependents. It does not read sibling spec bodies.
 - For the re-open precondition and the reconcile pass, this command may run `git status --porcelain` scoped to the feature directory to detect uncommitted scenario/task edits. It does not read the diff bodies or run any other git command. The reconcile pass additionally reads `specs/{feature}/tasks.md` to find the tasks referencing each candidate scenario, and appends a task there on confirmation; it never reads or rewrites the scenario bodies.
-- Reference: §spec-requirements, §spec-lifecycle, §scenarios, §text-first-artifacts, §bug-handling (constitution loaded by `/papur:target` — do not re-read).
+- Reference: §spec-requirements, §spec-lifecycle, §scenarios, §text-first-artifacts, §bug-handling, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
 
 ## Instructions
 
@@ -43,7 +43,7 @@ Read `.ductus/session.toml`. If the session includes a `scenario` and `scenario-
 
 1. Read `.ductus/session.toml` to get the session target's feature and optional scenario.
 2. Read the target artifact (scenario file if targeted, otherwise `spec.md`).
-3. **Recompute dependencies (safety net).** If the target is a spec, route the dependency dry run through the runtime's `run-generator` primitive (or `.ductus/scripts/gen-spec-deps.sh --dry-run` with host tools when no ductus runtime is registered; the generator walks every spec — there is no per-spec mode). When it reports drift, the `dependencies:` frontmatter is stale from uncommitted body edits; surface that and recommend committing (the pre-commit hook syncs it) or running the generator manually. Do **not** run the generator for real here: this command's writes are limited to the target's questions/scenario/task/status and the session file (see Scope Boundaries), while the generator rewrites `dependencies:` across every spec. The pre-commit hook normally keeps this in sync; this step catches uncommitted body edits. (Skip on scenario targets — scenarios have no `dependencies` field.)
+3. **Recompute dependencies (safety net).** If the target is a spec, invoke `derive-dependencies` (the report-only default — it never writes without `--write`; it walks every spec, there is no per-spec mode). When it reports drift, the `dependencies:` frontmatter is stale from uncommitted body edits; surface that and recommend committing (the pre-commit hook syncs it) or running `ductus derive-dependencies --write` manually. Do **not** pass `--write` here: this command's writes are limited to the target's questions/scenario/task/status and the session file (see Scope Boundaries), while a writing run rewrites `dependencies:` across every spec. The pre-commit hook normally keeps this in sync; this step catches uncommitted body edits. (Skip on scenario targets — scenarios have no `dependencies` field.)
 4. If the target is a spec, read its frontmatter `status` field now — the value is needed for the gate, the impact display, the classifier's status tiebreaker, and the post-record mutation.
 5. Display the feature name, scenario name (if targeted), status, and a brief summary of what the artifact covers.
 
