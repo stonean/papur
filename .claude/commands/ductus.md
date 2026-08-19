@@ -170,6 +170,14 @@ Run a single pre-flight phase after the **Permission Setup** seed (so the ductus
 
 The phase runs both checks, accumulates every restart-requiring write into a **pending-restart set**, and at the end emits a **single combined abort** if that set is non-empty (see **Pre-flight abort**). If neither check needs a restart, the run proceeds to **Pre-run Migrations**. Running both checks before the single abort is what collapses the worst case — a stale `ductus.md` on an adopter who has never wired ductus — into one restart instead of two.
 
+**Create `{tempdir}` first, before either check.** Both checks fetch into it, and so does the later **Archive fetch and extract**:
+
+```text
+mktemp -d -t ductus-XXXXXX
+```
+
+On macOS/Linux this lands under `$TMPDIR` or `/tmp`. Never reuse a directory from a prior run — a fresh fetch is the only way `/ductus` picks up upstream changes. It is created here rather than inside either check because the checks run in order and the *first* of them needs it: **ductus runtime detection** fetches the version pin into it. Creating it inside the second check left the first with nowhere to fetch to, which is what made greenfield acquisition halt before it could start.
+
 ### ductus runtime detection
 
 Resolve whether the ductus runtime is live in this session and, when it is not, acquire and wire it so the next session runs the deterministic path. Detection resolves to one of **two** states — A (runtime live this session) and B (not live: acquire, wire, restart). There is no third "binary absent" state: the runtime is required, and a missing binary is work to perform.
@@ -195,12 +203,20 @@ The reason is not tidiness. A retired-namespace server is a *different runtime a
 | `{store-dir}` | `~/.ductus/bin/` |
 | `{store-path}` | `~/.ductus/bin/ductus` (`ductus.exe` on Windows) |
 | `{pointer-path}` | `.ductus/bin/ductus` (repo-relative; `ductus.exe` on Windows) |
-| `{pin}` | the single SemVer line in `{staging-dir}/ductus-main/version` |
+| `{pin}` | the single SemVer line in `{tempdir}/version`, fetched by **Runtime acquisition** step 1 |
 | `{triple}` | the host target triple, from the table in **Runtime acquisition** |
 
 #### State A — runtime live this session
 
-A `ductus`-namespaced tool is available to this session, so the runtime is live and the rest of the run takes the **deterministic primitive path**. ductus contributes nothing to the **pending-restart set**, and detection emits no message.
+A `ductus`-namespaced tool is available to this session, so the runtime is live and the rest of the run takes the **deterministic primitive path**.
+
+**Live is not current — version-check it against `{pin}` before trusting it.** Probe the resolved binary (the `[runtime] path` when the project configures one, else `{store-path}`) and read its reported version. This is the same probe **Runtime acquisition** step 2 performs, and the **Permission Setup** seed pre-authorizes it.
+
+- **Reports `{pin}`** — proceed. ductus contributes nothing to the **pending-restart set**, and detection emits no message. This is the routine path.
+- **A project-supplied `[runtime] path` reports something else** — emit Branch 1's warning and continue. A project naming a path has stated deliberately which binary it wants.
+- **Anything else** — the runtime is **live but stale**. Acquire `{pin}` per **Runtime acquisition** Branch 2, then run the rest of this session through `{pointer-path} <primitive>` rather than the MCP tools: the server was spawned at session start and is still the old binary, so its tool surface stays stale no matter what is now in the store. Add the acquisition to the **deferred-restart set** and carry the notice to the **Closing restart**, exactly as State B does.
+
+A live-but-stale runtime fails in the direction hardest to attribute. It is missing primitives the framework has since come to depend on, and `/ductus` reports success because a tool *was* in the inventory — so the failure surfaces later, somewhere else, as someone else's problem. Observed 2026-08-19 in an adopter project: the store held `0.29.10` while the framework pinned `0.31.0`, so the pre-commit hook that same run refreshed called `derive-dependencies` and `derive-references`, which that binary does not carry, and the shell generators they replaced had already been deleted. Every commit in that project halted, and nothing in the `/ductus` run said the runtime was behind. Detection that stops at "a tool is in my inventory" answers the wrong question: what the run needs to know is whether the runtime it is about to depend on is the one this framework revision was tested against.
 
 State A is a **binding execution contract, not a preference.** Detecting the runtime and then walking the prose `curl`/`tar`/`python3` path anyway is the exact failure 029 exists to prevent — it spends the markdown path's tokens despite a cheaper path being live, and it is what makes the State-B wire-and-restart pointless. For the rest of this run:
 
@@ -250,9 +266,17 @@ When `.ductus/config.toml` has a `[runtime]` `path` key, the project has taken r
 
 ##### Branch 2 — acquire the pinned release
 
-1. **Read the pin.** Read `{staging-dir}/ductus-main/version` — one SemVer line, no `v` prefix. It travels in the same archive as the `framework/` tree it describes, so the pin cannot disagree with the framework revision it arrived with. If the file is **absent or unparseable**, halt naming it — a framework revision predating this file has no pin to read, and guessing a version or falling through to "latest" silently installs a runtime the framework was never tested against.
+1. **Fetch and read the pin.** One SemVer line, no `v` prefix, fetched into the `{tempdir}` the **Pre-flight Phase** created:
 
-   > Halt: `no runtime version pin at {staging-dir}/ductus-main/version — this framework revision cannot state which runtime it requires.`
+   ```text
+   curl -fsSL https://raw.githubusercontent.com/stonean/ductus/main/version -o {tempdir}/version
+   ```
+
+   It is fetched here rather than read out of the framework archive because acquisition runs in **pre-flight**, and the archive is not fetched until **Archive fetch and extract**, hundreds of lines later. Reading it from the archive is what this step used to specify, and it halted every greenfield adoption: State B is the first-run state by definition, so the pin was never on disk when this step needed it. A one-line file keeps pre-flight's small-fetch-or-no-fetch property intact — it is the archive's multi-hundred-KB cost this phase avoids, not a `curl`.
+
+   The pin and the framework tree now arrive in two fetches rather than one, so they agree only because both name `main`. A push landing between them is the sole divergence, it is bounded by one run, and the next `/ductus` re-acquires against the newer pin — acquisition is idempotent and re-probes the store. If the fetch fails, or the file is **absent or unparseable**, halt naming it: guessing a version or falling through to "latest" silently installs a runtime the framework was never tested against.
+
+   > Halt: `could not read the runtime version pin from https://raw.githubusercontent.com/stonean/ductus/main/version — /ductus cannot state which runtime this framework revision requires.`
 
 2. **Probe the store for idempotency.** Execute `{store-path}` and read its reported version.
    - Reports `{pin}` ⇒ **already current**. Perform no download and leave the binary byte-unchanged. Continue to the pointer.
@@ -271,13 +295,13 @@ When `.ductus/config.toml` has a `[runtime]` `path` key, the project has taken r
 
    A host matching no row halts naming the platform and the `[runtime]` key — supplying a binary is the escape hatch for an unpublished platform.
 
-4. **Fetch the archive and its sidecar** from the release, into the staging directory:
+4. **Fetch the archive and its sidecar** from the release, into `{tempdir}`:
 
    ```text
    curl -fsSL https://github.com/stonean/ductus/releases/download/ductus-v{pin}/ductus-{triple}.tar.gz \
-     -o {staging-dir}/ductus-{triple}.tar.gz
+     -o {tempdir}/ductus-{triple}.tar.gz
    curl -fsSL https://github.com/stonean/ductus/releases/download/ductus-v{pin}/ductus-{triple}.tar.gz.sha256 \
-     -o {staging-dir}/ductus-{triple}.tar.gz.sha256
+     -o {tempdir}/ductus-{triple}.tar.gz.sha256
    ```
 
 5. **Verify the digest before installing anything.** Compute the archive's SHA-256 with the platform tool — `shasum -a 256` on macOS, `sha256sum` on Linux, `certutil -hashfile … SHA256` on Windows — and compare against the sidecar. This is stricter than the framework archive fetch, which tolerates a missing sidecar because GitHub's auto-generated source tarballs ship without one; the runtime's release assets always carry theirs, so a **missing sidecar is a failure here**, not a skip.
@@ -286,7 +310,7 @@ When `.ductus/config.toml` has a `[runtime]` `path` key, the project has taken r
 
    ```text
    mkdir -p {store-dir}
-   tar -xzf {staging-dir}/ductus-{triple}.tar.gz -C {staging-dir}
+   tar -xzf {tempdir}/ductus-{triple}.tar.gz -C {tempdir}
    ```
 
    Write the extracted binary to `{store-path}` via **tempfile + rename** — the same atomic write every other ductus write uses — so a concurrent `/ductus` run in another project sees the old binary or the new one, never a partial file. Then `chmod +x {store-path}`.
@@ -353,13 +377,7 @@ Verify the running session's `ductus.md` instructions are current.
 
 #### Small fetch
 
-Create a fresh temp directory used by both this check and the later archive fetch:
-
-```text
-mktemp -d -t ductus-XXXXXX
-```
-
-On macOS/Linux this lands under `$TMPDIR` or `/tmp`. Never reuse a directory from a prior run — a fresh fetch is the only way `/ductus` picks up upstream changes.
+`{tempdir}` already exists — the **Pre-flight Phase** created it before either check, and **ductus runtime detection** has already fetched the version pin into it. Do not create a second one.
 
 Issue exactly one `curl` against `raw.githubusercontent.com` for the upstream bootstrap file:
 
@@ -407,7 +425,7 @@ Pinning is an opt-out from automatic updates, not an opt-out from knowing the pi
 
 #### Current / no installed copy → continue
 
-When all selected agents are `current` or `no installed copy`, the self-update check contributes nothing to the **pending-restart set**. The temp directory created here is reused by the **Archive fetch and extract** step below — no second `mktemp`, no leaked extra temp directory. Whether the run proceeds is decided by **Pre-flight abort** once ductus detection has also run.
+When all selected agents are `current` or `no installed copy`, the self-update check contributes nothing to the **pending-restart set**. The `{tempdir}` the **Pre-flight Phase** created is reused by the **Archive fetch and extract** step below — one `mktemp` for the whole run, no leaked extra temp directory. Whether the run proceeds is decided by **Pre-flight abort** once ductus detection has also run.
 
 ### Pre-flight abort
 
