@@ -142,7 +142,7 @@ The top-level directory name (`specs` above) is the documented default; a projec
 | `clarified` | All open questions resolved, acceptance criteria are concrete and testable |
 | `planned` | Plan and tasks exist, readiness check passed |
 | `in-progress` | Implementation has started |
-| `done` | All acceptance criteria verified, code merged, and no scenario under the spec carries unresolved open questions |
+| `done` | All acceptance criteria verified, code merged, no scenario under the spec carries unresolved open questions, and no fold is outstanding |
 
 ```text
 draft ──/clarify──▶ clarified ──/plan──▶ planned ──/implement──▶ in-progress ──[/review gate]──▶ done
@@ -157,6 +157,12 @@ Forward edges only — `/clarify` raises status to `clarified`, `/plan` to `plan
 The three cases share one test, and it is the test rather than the list that decides a case the list does not name: an edit is mechanical when the diff is **determinable without author judgment** *and* **changes no claim the spec makes** — no requirement added, removed, or reworded; no behavior described differently; no fact corrected. An edit that changes no claim is therefore mechanical even when it matches none of (a)–(c): repairing a typo, or sweep residue where a substitution landed in a sentence it did not fit, restores the text to what it already meant and asserts nothing new. A **factual correction is not this** — correcting a claim that was wrong changes what the spec asserts, and takes the back-edge. Stating the test rather than extending the list is deliberate: a closed enumeration makes every new case an argument about whether it deserves an exception, when the question is only ever whether a claim moved.
 
 This avoids spec proliferation; scenarios evolve the existing spec rather than spawning a new one. Spec bodies are living documents that represent current state — git history is the historical record of what was written when.
+
+**A branch-scoped spec is a staging form, not a fourth state.** A spec numbered `{identifier}.{n}-{slug}` ([§numbering](#numbering-convention)) is created on a branch that cannot coordinate a sequential number, and it declares in `folds-into:` the upstream spec whose statement it is really making. It moves through `draft` → `clarified` → `planned` → `in-progress` like any other spec, but it has no `done` state: a declared fold target is outstanding work, so the pipeline view reports the spec as carrying a pending fold and the pre-`done` gate blocks `in-progress → done` while the key is present. It is retired, not completed. Fold-back is the discharge — it folds the content into the upstream spec as a body edit or as a scenario, re-points every inbound pointer, and removes the staging directory.
+
+Fold-back adds **no new back-edge**. Reopening a `done` upstream spec is one of the two `done → in-progress` edges already defined above: the scenario edge when the content lands as a scenario, the meaningful-body-edit edge when it lands in the body. An upstream spec that is not `done` is left where it is.
+
+This holds the anti-proliferation stance rather than relaxing it. A branch-scoped spec is a place to write on a branch, not a second durable home for a concern — its lifetime ends at the merge that makes the upstream spec reachable, and what survives is one spec, edited. A branch-scoped directory that outlives its branch is drift, and a detection check reports it.
 
 Three operational rules follow from the lifecycle and apply on every project:
 
@@ -416,11 +422,12 @@ Findings reach the inbox two ways, and both MUST be captured, not dropped. **Inc
 
 - **Capture automatically, without prompting.** When an agent identifies such an issue during any task work, it appends the issue to `specs/inbox.md` itself — the same mechanical append `/log` performs — without pausing to ask the user. Capture is not a pipeline gate; it never interrupts the task in flight.
 - **Record, do not derail.** The agent does not stop the current task to fix an out-of-scope issue. It records the finding and continues. An issue *inside* the current task's scope is fixed as part of the task, not logged.
+- **Scope decides the destination — the inbox is only for findings with no home.** A bug or omission that falls inside the **in-progress spec's** scope — a defect in what that spec built, a gap in what it specified, a case its scenarios missed — is written to that spec's `tasks.md` as a new unchecked task, never to `specs/inbox.md`. An in-progress spec *is* the home the inbox exists to find, so capturing its own defects there buys nothing and costs a full loop: the item is appended, re-read on every intervening `/groom` pass, walked through the decision tree, and routed back to the spec it came from. Three tiers, by scope: inside the current **task** → fix it in the task; inside the current **spec** but outside the task → a new task on that spec; outside the spec entirely → the inbox. Nothing becomes less visible by taking the shorter route, because a task added mid-implementation is surfaced at completion the same way a capture is. This does **not** make `tasks.md` a second capture queue: the durable record still lands where [§bug-handling](#bug-handling) puts it — a missing requirement becomes a scenario or a spec edit via `/papur:amend`, with the task as the work item that implements it — and a **chore** with no feature home stays an inbox item however close to the current work it surfaced.
 - **Severity raises salience, not the routing.** Security issues and memory or resource leaks are the cases most costly to lose, so they are captured first and flagged; convention violations and lesser findings are captured the same way. Everything routes through `/groom` later — capture itself is uninterpreted.
 - **Surface at completion.** Issues captured during a unit of work are presented back to the user when that work completes — as part of the `/papur:implement` completion summary, the `/papur:review` report, and the `/papur:analyze` report. The surfacing step is the backstop that keeps capture from being silent: per the **Design Principles** rule, the framework does not rely on the agent *remembering* a mid-task finding, it makes every capture visible at the next gate.
 - **Re-capture is idempotent.** A command that captures on every run guards each append against what the inbox already holds, so re-running an audit against an unchanged repo records nothing new. Without the guard, the honest choice between a growing backlog and a silent one would push toward silence.
 
-This keeps the agent's attention on the task while guaranteeing that discoveries — incidental or audited — reach the inbox and, through `/groom`, the right artifact tier ([Bug Decision Tree](#bug-decision-tree)).
+This keeps the agent's attention on the task while guaranteeing that discoveries — incidental or audited — reach an artifact that will act on them: the in-progress spec's `tasks.md` when the finding belongs to that spec, otherwise the inbox and, through `/groom`, the right artifact tier ([Bug Decision Tree](#bug-decision-tree)).
 
 <!-- §brownfield-process -->
 
@@ -525,6 +532,10 @@ A capability is runtime-eligible only when **all three** hold:
 3. **Specifiable as prose** — the capability can be stated completely enough that the Markdown-only reference documents it, and a primitive mirrors that reference rather than introducing policy of its own. This is what keeps the specification and the implementation one thing: the reference is where the policy lives, the primitive is how it runs.
 
 A capability that fails any criterion stays out of the runtime. Anything that requires reading prose for intent is permanently LLM-owned regardless of how mechanical its surface looks.
+
+**Eligibility is a default, not a permission.** A capability meeting all three criteria is implemented as a runtime primitive; a shell script is the fallback, taken only when a criterion genuinely fails. The framework still needs shell entry points — a pre-commit hook, a CI step, an `/audit` family — and those keep their scripts, but the entry point resolves the runtime and calls the primitive rather than reimplementing the check inside itself. A script that parses frontmatter or markdown structure to do its work has already failed principle 3, whether it reaches for `awk` or for an embedded interpreter: the language is not what the principle turns on. The cost of ignoring this is not hypothetical — each hand-rolled parser is a fresh copy of a parse the runtime already owns and has tested, and the copies drift, so a bug fixed in one survives in the others.
+
+The pull is toward the script, because a script runs immediately and a primitive is a build away. Weigh that honestly: the build is a one-time cost paid by the author, and the parser is a permanent cost paid by every reader afterward.
 
 #### Acquisition invariant
 
@@ -672,7 +683,15 @@ The originating spec's acceptance criteria include delivering the cross-spec upd
 
 ## Numbering Convention
 
-Feature directories use three-digit zero-padded numbers: `000-skeleton`, `001-observability`, `002-events`. Numbers establish creation order and suggest a natural implementation sequence, but dependencies between features determine the actual build order.
+Feature directories take one of two forms.
+
+**Sequential** — three-digit zero-padded numbers: `000-skeleton`, `001-observability`, `002-events`. Numbers establish creation order and suggest a natural implementation sequence, but dependencies between features determine the actual build order. **Three digits is a minimum width, not a fixed one**: a corpus that passes 999 continues at `1000-`, and such a directory is a feature directory like any other. What is not accepted is padding beyond the minimum — `0500-` is not a name this convention produces, and reading it as `500` would give one number two spellings. This is the default and the destination form: spec creation with no branch identifier supplied numbers sequentially, and no persisted setting changes that.
+
+**Branch-scoped** — `{identifier}.{n}-{slug}`, where `{identifier}` is an operator-supplied token sanitized to `^[a-z0-9]+(?:-[a-z0-9]+)*$` and `{n}` counts from 1 within that identifier: `1234.1-retry-budget`, `1234.2-backoff`. The identifier namespaces the counter, so branches numbering under different identifiers cannot collide at merge. The two counters are independent in both directions — a spec root holding `050-a` and `1234.1-b` still yields `051-` next, and a branch-scoped directory never advances the sequential sequence.
+
+**The branch-scoped form is temporary.** It exists so work on a branch can be specified without claiming a sequential number the branch has no way to coordinate. Every branch-scoped spec declares in its `folds-into:` frontmatter key the sequential spec it stands in for, and is discharged into that spec by fold-back rather than completed in place — see [§spec-lifecycle](#spec-lifecycle).
+
+The membership rule that recognizes a feature directory accepts both forms and is defined in exactly one place. A surface that reads the spec corpus calls it rather than restating the digit convention; a second copy of the rule is how the two forms drift apart.
 
 <!-- §markdown-standards -->
 

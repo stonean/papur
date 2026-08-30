@@ -17,7 +17,7 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
 
 1. Invoke `merge-permissions` (MCP: `merge-permissions`) to install the canonical `permissions.allow` and `permissions.deny` sets into `.claude/settings.local.json` and dedup exact-match entries from both arrays. The primitive creates the file if missing (with `{"permissions":{"allow":[],"deny":[]}}`), reads it otherwise, and writes atomically (tempfile + rename). It preserves untouched top-level keys and unspecified keys under `permissions` byte-for-byte; the action emitted is `created`, `updated`, or `unchanged` with per-array counts of entries added vs. duplicates removed. Otherwise (markdown-only path), the host walks the canonical sets below: read the file, ensure every canonical entry is present, remove exact-match duplicates from `permissions.allow` and `permissions.deny`, write atomically.
 
-2. Canonical `permissions.allow` entries:
+2. Canonical `permissions.allow` entries. **Only the bulleted entries below are canonical** — a pattern appearing in the surrounding prose is explanation, never an entry to install, and some of it names patterns that must *not* be added:
 
    **File operations:**
    - `Edit`
@@ -47,14 +47,7 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `Bash(git status *)`
    - `Bash(git show *)`
 
-   **Git commands targeting another working tree (`-C <path>`):**
-   - `Bash(git -C * add *)`
-   - `Bash(git -C * commit *)`
-   - `Bash(git -C * push *)`
-   - `Bash(git -C * log *)`
-   - `Bash(git -C * diff *)`
-   - `Bash(git -C * status *)`
-   - `Bash(git -C * show *)`
+   **Git commands targeting another working tree (`-C <path>`):** intentionally **none**. An allow pattern must never place its wildcard before the subcommand: a `Bash(git -C <wildcard> status <wildcard>)` shape lets that leading wildcard span inserted options, not just the path, so `git -C . -c core.pager='!sh -c "…"' status` matches and is approved with no prompt — and both `-c` and `--exec-path` run arbitrary commands. The seven `-C` variants that once lived here were removed for exactly the over-broadening reason `framework/bootstrap/configure/antigravity.md` gives for omitting them there. `git -C` invocations fall through to the host's normal Ask prompt; do not re-add them. The same hazard does not apply to the deny set below, where a wildcard that matches more only refuses more.
 
    **Utility:**
    - `Bash(curl *)`
@@ -123,8 +116,14 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `mcp__ductus__check-artifacts`
    - `mcp__ductus__derive-routing-candidates`
    - `mcp__ductus__check-orphaned-references`
+   - `mcp__ductus__check-command-flags`
+   - `mcp__ductus__check-review-agreement`
    - `mcp__ductus__derive-dependencies`
    - `mcp__ductus__derive-references`
+   - `mcp__ductus__check-unfolded-specs`
+   - `mcp__ductus__rewrite-spec-links`
+   - `mcp__ductus__retire-feature`
+   - `mcp__ductus__invalidate-review`
    <!-- generated:mcp-allow:end -->
 
 3. Canonical `permissions.deny` entries:
@@ -150,6 +149,8 @@ Configure `.claude/settings.local.json` with the permissions needed for slash co
    - `Bash(git -C * reset --hard *)`
    - `Bash(git -C * rm *)`
    - `Bash(git -C * clean -fd *)`
+
+   The six `git -C *` patterns above keep their leading wildcard deliberately, and must not be narrowed to match the allow set: on the deny side a pattern that matches more refuses more, so the same shape that is a hole in an allow entry is a stronger guard here.
 
    **Other dangerous commands:**
    - `Bash(chmod -R 777 *)`

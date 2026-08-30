@@ -63,6 +63,7 @@ Each feature lives in `specs/NNN-feature-name/` and progresses through these sta
 | --- | --- |
 | `/papur:amend` | Add a question or a scenario to the targeted spec (classifier-driven). |
 | `/papur:prune` | Prune a feature's tasks.md — drop spent task sections, or reset to template state. |
+| `/papur:fold` | Fold a branch-scoped spec into its upstream home and retire the staging directory. |
 
 <!-- generated:commands-refine:end -->
 
