@@ -2,11 +2,28 @@
 
 A markdown-flavored markup language that compiles to semantic, accessible HTML, CSS, and beyond.
 
-> **Agents:** this file is the committed home for project rules — append durable learnings to the matching section (Gotchas, Workflow, Boundaries, Code Style, Testing). Add a new section only when none fits.
+> **Agents:** whether a rule belongs in this file is decided by the test in the constitution's [§drift-prevention](.ductus/constitution.md#drift-prevention); the block below says where any other learning goes.
+
+<!-- /ductus maintains the region between the BEGIN and END markers below:
+     where a learning goes, from the constitution's §drift-prevention. Edits
+     inside it are overwritten; the rest of this file is preserved
+     byte-for-byte. -->
+<!-- BEGIN ductus:memory-routing -->
+> **Where a learning goes** ([§drift-prevention](.ductus/constitution.md#drift-prevention)). Commit whatever would help a teammate, since an agent's per-user memory holds only personal facts and external pointers. Then file it by who it is true for: every project running the pipeline, the framework's constitution, which is upstream, so raise it with ductus rather than edit `.ductus/constitution.md`; your organization's projects, the shared constitution it registers; this project alone, this file only for what every session needs before acting, and otherwise where its work is read: architecture in `system.md`, `events.md` or `errors.md`, read before changing architecture, configuration or deployment; a feature's decision in its spec, read when the spec is worked; a procedure in `docs/` or a skill, read when the task comes up; a one-file trap in a comment or test there, read when the file is opened; how a lesson was learned in its commit.
+<!-- END ductus:memory-routing -->
 
 ## Constitution
 
 See [.ductus/constitution.md](.ductus/constitution.md) — guiding principles, development pipeline, spec lifecycle, and quality standards that govern this project.
+
+<!-- /ductus maintains the region between the BEGIN and END markers below.
+     Registered shared constitutions (.ductus/config.toml [constitutions.*])
+     are listed there, one line each. Empty when none are registered. Edits
+     inside it are overwritten; the rest of this file is preserved
+     byte-for-byte. -->
+<!-- BEGIN ductus:constitutions -->
+
+<!-- END ductus:constitutions -->
 
 ## Tech Stack
 
@@ -115,7 +132,7 @@ are recorded project-level choices, wired in by the specs that use them.
 
 -->
 
-- `scripts/gen-spec-deps.sh` derives spec dependencies from **inline body links** to other specs (`[NNN-slug](../NNN-slug/spec.md)`), not just frontmatter `dependencies`, and the pre-commit hook **rejects cycles** in the derived graph. Keep cross-references that point at a *downstream* spec (e.g. a foundational layer spec referencing a target spec that consumes it) under a `## See also` heading — links there are not treated as hard dependencies — and out of frontmatter `dependencies`. An inline body link in the spec's prose or acceptance criteria becomes a hard edge and can induce a cycle that blocks every commit until moved.
+- The pre-commit hook runs `ductus derive-dependencies`, which regenerates each spec's frontmatter `dependencies:` from its **inline body links** to other specs (`[NNN-slug](../NNN-slug/spec.md)`) — the frontmatter is a derived index, so a hand edit to it is overwritten — and **rejects cycles** in the derived graph. Keep cross-references that point at a *downstream* spec (e.g. a foundational layer spec referencing a target spec that consumes it) under a `## See also` heading — links there are not treated as dependencies. An inline body link in the spec's prose or acceptance criteria becomes a hard edge and can induce a cycle that blocks every commit until moved.
 
 ## Boundaries
 
@@ -132,11 +149,3 @@ are recorded project-level choices, wired in by the specs that use them.
 - Ask before changing database schema
 
 -->
-
-<!-- BEGIN ductus:constitutions -->
-
-<!-- END ductus:constitutions -->
-
-<!-- BEGIN ductus:memory-routing -->
-> **Where a learning goes** ([§drift-prevention](.ductus/constitution.md#drift-prevention)). Commit whatever would help a teammate, since an agent's per-user memory holds only personal facts and external pointers. Then file it by who it is true for: every project running the pipeline, the framework's constitution, which is upstream, so raise it with ductus rather than edit `.ductus/constitution.md`; your organization's projects, the shared constitution it registers; this project alone, this file only for what every session needs before acting, and otherwise where its work is read: architecture in `system.md`, `events.md` or `errors.md`, read before changing architecture, configuration or deployment; a feature's decision in its spec, read when the spec is worked; a procedure in `docs/` or a skill, read when the task comes up; a one-file trap in a comment or test there, read when the file is opened; how a lesson was learned in its commit.
-<!-- END ductus:memory-routing -->
