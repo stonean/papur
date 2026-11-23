@@ -1,13 +1,6 @@
 ---
 status: draft
 dependencies: []
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 ---
 
 # {NNN} — {Feature Name}
@@ -34,9 +27,10 @@ review:
      the wrong spec, or removing it (and renaming the directory) when the team
      decides the spec should stand on its own. The named spec normally lives
      on the upstream branch and is absent from your working tree; that is
-     expected, not an error. While the key is present the spec carries
-     outstanding work, so it is reported by /papur:status and cannot reach
-     `done` — after the merge, target it and fold it.
+     expected, not an error. While the key is present the spec still owes its
+     fold, and /papur:status reports it at every status. The fold never
+     holds `done`: the spec reaches `done` like any other, and once it has and
+     the branch has merged, target it and fold it.
 
      Cross-service references: to reference a spec in another service (its own
      repo with its own ductus install), write a normal inline markdown link to
@@ -83,12 +77,25 @@ At least one concrete, testable criterion is required before `/papur:clarify` wi
      cutting requirements this spec depends on visible to reviewers and to
      /papur:analyze, which checks every cited ID against the loaded rule
      files. See §rules in the constitution for when a concern belongs in a rule
-     vs an acceptance criterion vs a scenario.
+     vs an acceptance criterion vs a scenario. A rule whose file declares that
+     it verifies code patterns (e.g. `QUAL-*` in quality-cross.md) may be cited
+     for visibility: /papur:review enforces it against code, and
+     /papur:analyze does not check whether its trigger fires.
+
+     A spec that deliberately departs from a rule states it once as a nested entry
+     instead of a citation: `departs:` and the rule ID, its `reason:`, and
+     optionally the governing document that decided it as `cited: §anchor`. It
+     takes no `--waive` at review, and /papur:analyze records the rule
+     `waived` rather than as a finding (the grammar is `check-departures`'):
+
+- departs: `BE-INPUT-001`
+  - reason: why this spec does not satisfy the rule
+  - cited: §rules
 
      Replace this comment block with a list of rule references when applicable:
 
-- `BE-AUTHN-001` — memory-hard password hashing
-- `FE-XSS-002` — output encoding strategy
+- `BE-AUTHN-001` — deliberately slow password hashing
+- `FE-XSS-001` — output encoding strategy
 - `BE-INPUT-001` — server-side input validation
 
      Delete this section entirely if no rules apply to the area this spec covers.
@@ -98,6 +105,8 @@ At least one concrete, testable criterion is required before `/papur:clarify` wi
 
 <!-- Uncertainties, unresolved decisions, and areas needing investigation.
      All open questions must be resolved before moving to the plan phase.
+     Write each question as one list item: a paragraph here is not read as
+     a question.
 
      To surface questions: assume this feature shipped and failed — what went wrong? Example:
 

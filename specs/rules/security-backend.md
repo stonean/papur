@@ -1,40 +1,30 @@
 # Security Rules — Backend
 
-Enforceable security rules for server-side code, APIs, data persistence, and integration boundaries. These rules apply to all projects adopting `ductus`.
-
-Rules use RFC 2119 language: **MUST** / **MUST NOT** are enforced by the validate command (errors); **SHOULD** / **SHOULD NOT** are flagged as warnings.
-
-Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assigned, an ID is never renumbered, even if the rule is moved within the file or deprecated. Categories: `AUTHN` (authentication), `AUTHZ` (authorization), `INPUT` (input validation), `DATA` (data protection), `API` (API security), `LOG` (logging and audit), `DEPS` (dependency management), `ERR` (error handling). See `specs/008-security-rules/data-model.md` for the full schema.
+Enforceable security rules for server-side code, APIs, data persistence, and integration boundaries. These rules verify **design-time commitments** — what a spec, plan, `specs/system.md` or `specs/errors.md` must state — and `/papur:analyze` enforces them against feature artifacts; `/papur:review`'s security pass also checks the code in scope against them. Rule IDs follow the format `BE-{CATEGORY}-{NNN}`. Categories: `AUTHN` (authentication), `AUTHZ` (authorization), `INPUT` (input validation), `DATA` (data protection), `API` (API security), `LOG` (logging and audit), `DEPS` (dependency management), `ERR` (error handling). Severity, ID permanence, and how review selects or excludes this file follow constitution §rules.
 
 ## BE-AUTHN — Authentication
 
 ### BE-AUTHN-001
 
-> Passwords MUST be hashed using a deliberately slow password-hashing algorithm before persistence — never encrypted, never stored in plaintext. Acceptable algorithms are Argon2id (preferred), scrypt, bcrypt, or PBKDF2 (where FIPS compliance is required). General-purpose hashes (MD5, SHA-1, SHA-2 family, SHA-3 family) MUST NOT be used for password storage even when salted.
+> Passwords MUST be hashed using a deliberately slow password-hashing algorithm before persistence — never encrypted, never stored in plaintext. Acceptable algorithms are Argon2id (preferred), scrypt, PBKDF2 (where FIPS compliance is required), and bcrypt only in a legacy system where neither Argon2id nor scrypt is available, with input beyond bcrypt's 72-byte limit handled rather than silently truncated. General-purpose hashes (MD5, SHA-1, SHA-2 family, SHA-3 family) MUST NOT be used for password storage even when salted.
 
-**Rationale:** Encryption is reversible — a database breach plus key access yields plaintext credentials. One-way hashing is irreversible by design. Memory-hard algorithms (Argon2id, scrypt, bcrypt) specifically resist GPU-accelerated cracking; PBKDF2 is iteration-hard rather than memory-hard but remains NIST SP 800-63B–approved and is the only FIPS 140–validated option in many regulated environments.
+**Verification:** Any spec or plan that introduces credential storage (search keywords: `password`, `credential`, `auth`, `login`) MUST name the hashing algorithm. Salting and cost/iteration parameters MUST be specified or referenced, at or above the OWASP Password Storage Cheat Sheet's minimums: for Argon2id, any of the five configurations it calls an equal level of defense, each with parallelism 1 — 46 MiB memory and 1 iteration, 19 MiB and 2, 12 MiB and 3, 9 MiB and 4, or 7 MiB and 5; for scrypt, any of the five it calls a similar minimal level of defense, each with r=8 — N=2^17 and p=1, N=2^16 and p=2, N=2^15 and p=3, N=2^14 and p=5, or N=2^13 and p=10; bcrypt cost 10; PBKDF2-HMAC-SHA256 600,000 iterations or PBKDF2-HMAC-SHA512 220,000. A spec that chooses bcrypt MUST state why neither Argon2id nor scrypt is available to the system, and how input beyond bcrypt's 72-byte limit is handled rather than silently truncated. A spec that chooses PBKDF2 MUST state the FIPS 140 requirement that makes it the choice. `/papur:analyze` flags persistence paths that store a password as a plain or salted single-pass digest (`MD5`, `SHA-1`, `SHA-256`, `SHA-512` — not the HMAC inside PBKDF2), plain `crypt`, or "encrypted", that choose bcrypt without stating that Argon2id and scrypt are unavailable, that choose PBKDF2 without stating a FIPS 140 requirement, that name parameters meeting none of those configurations, or that omit the algorithm question entirely.
 
-**Verification:** Any spec or plan that introduces credential storage (search keywords: `password`, `credential`, `auth`, `login`) MUST name the hashing algorithm. Validate flags persistence paths that use `MD5`, `SHA-1`, `SHA-256`, `SHA-512`, plain `crypt`, "encrypted", or that omit the algorithm question entirely. Salting and cost/iteration parameters MUST be specified or referenced.
-
-**Source:** OWASP Password Storage Cheat Sheet, NIST SP 800-63B
+**Source:** OWASP Password Storage Cheat Sheet, NIST SP 800-63B-4 §3.1.1.2, NIST SP 800-132, RFC 9106 (Argon2), RFC 7914 (scrypt)
 
 ### BE-AUTHN-002
 
 > API tokens and bearer tokens MUST be generated by a CSPRNG with at least 128 bits of entropy and MUST be stored as hashes (SHA-256 minimum) — never in plaintext. The raw token MUST be returned to the user once at creation and never persisted. SHA-256 (single-pass) is acceptable for high-entropy tokens generated per this rule; tokens whose entropy is below the 128-bit threshold MUST use a password-hash algorithm per `BE-AUTHN-001` instead.
 
-**Rationale:** Storing raw tokens enables immediate credential theft on database compromise. Hashing tokens turns the database into a verification store rather than a credential vault. The entropy precondition matters because a fast hash like SHA-256 is only safe when the input is uncrackable by brute force — a 128-bit random token cannot be enumerated, but a 6-character recovery code can.
+**Verification:** Any spec or plan that introduces API tokens, personal access tokens, or service tokens MUST commit to (a) CSPRNG generation with ≥128 bits of entropy, (b) hashed storage, and (c) a one-time-display pattern at issuance. `/papur:analyze` flags token-issuance specs that describe storing the token itself in the database, that omit the entropy source, or that use SHA-256 on low-entropy values.
 
-**Verification:** Any spec or plan that introduces API tokens, personal access tokens, or service tokens MUST commit to (a) CSPRNG generation with ≥128 bits of entropy, (b) hashed storage, and (c) a one-time-display pattern at issuance. Validate flags token-issuance specs that describe storing the token itself in the database, that omit the entropy source, or that use SHA-256 on low-entropy values.
-
-**Source:** OWASP Authentication Cheat Sheet
+**Source:** OWASP Session Management Cheat Sheet, RFC 6819 §4.3.2, §5.1.4.1.3 (OAuth 2.0 Threat Model and Security Considerations)
 
 ### BE-AUTHN-003
 
 > Session IDs MUST be generated using a cryptographically secure pseudorandom generator (CSPRNG) with at least 128 bits of entropy and MUST NOT contain user data, role information, or any meaningful identifier.
 
-**Rationale:** Predictable session IDs enable hijacking via guessing. Embedded data leaks information if the ID is logged, surfaced in errors, or transmitted insecurely.
-
-**Verification:** Any spec or plan that introduces sessions MUST commit to (a) a CSPRNG source for ID generation and (b) opaque, content-free IDs. Validate flags specs that propose deriving session IDs from user attributes, timestamps, or sequential counters, and flags specs silent on the ID generation source.
+**Verification:** Any spec or plan that introduces sessions MUST commit to a CSPRNG source for ID generation and to opaque, content-free IDs. `/papur:analyze` flags specs that propose deriving session IDs from user attributes, timestamps, or sequential counters, and flags specs silent on the ID generation source.
 
 **Source:** OWASP Session Management Cheat Sheet
 
@@ -42,9 +32,7 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > The server MUST issue a new session ID after authentication and after any privilege transition (role grant, role revocation, impersonation start, impersonation end, MFA elevation). The previous session ID MUST be invalidated.
 
-**Rationale:** Without regeneration, an attacker who fixes a known session ID before a victim authenticates inherits the post-login session — the canonical session-fixation attack. The same risk applies to any transition that changes what the session is authorized to do.
-
-**Verification:** Any spec or plan that introduces authentication, privilege change, or impersonation flows MUST commit to session ID regeneration at each transition. Validate flags auth flows that omit regeneration or that explicitly preserve the pre-auth session ID.
+**Verification:** Any spec or plan that introduces authentication, privilege change, or impersonation flows MUST commit to session ID regeneration at each transition. `/papur:analyze` flags auth flows that omit regeneration or that explicitly preserve the pre-auth session ID.
 
 **Source:** OWASP Session Management Cheat Sheet
 
@@ -52,101 +40,121 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Sessions MUST have both an idle timeout and an absolute timeout, both enforced server-side. Client-side timeout enforcement is supplementary only.
 
-**Rationale:** Idle timeout limits exposure from unattended sessions; absolute timeout bounds the lifetime of a hijacked session. Client-side enforcement is bypassable by direct API calls.
-
-**Verification:** Any spec or plan that introduces sessions MUST name both timeout values (idle, absolute) and confirm server-side enforcement. Validate flags session specs that omit either timeout or that rely on client-side expiration alone.
+**Verification:** Any spec or plan that introduces sessions MUST name both timeout values (idle, absolute) and confirm server-side enforcement. `/papur:analyze` flags session specs that omit either timeout or that rely on client-side expiration alone.
 
 **Source:** OWASP Session Management Cheat Sheet
 
 ### BE-AUTHN-006
 
-> Authentication failure responses MUST NOT reveal which credential component was invalid. The response for invalid username, invalid password, and disabled account MUST be indistinguishable in body, status code, and timing.
+> Authentication failure responses MUST NOT reveal which credential component was invalid, and password-reset responses MUST NOT reveal whether the account exists. The login responses for an invalid username, an invalid password, and a disabled account MUST be indistinguishable in body, status code, and timing, as MUST the password-reset responses for an existing and an unknown account.
 
-**Rationale:** Differential responses enable user enumeration — attackers discover valid usernames by varying inputs and observing response differences. Timing differences are exploited the same way as message differences.
-
-**Verification:** Any spec or plan that describes login or password-reset endpoints MUST commit to a generic failure response and to constant-time handling that does not differ across failure modes. Validate flags auth-flow specs that propose different messages or status codes for "user not found" vs. "wrong password."
+**Verification:** Any spec or plan that describes login or password-reset endpoints MUST commit to a generic login failure response, one password-reset response whether or not the account exists, and constant-time handling across those cases. `/papur:analyze` flags auth-flow specs that propose different messages or status codes for "user not found" vs. "wrong password," or a reset response that differs for an unknown account.
 
 **Source:** OWASP Authentication Cheat Sheet
 
 ### BE-AUTHN-007
 
-> The system MUST throttle authentication attempts (account lockout, exponential back-off, or rate limiting). Throttling MUST be account-scoped so distributed attacks against a single account cannot bypass IP-only limits, and SHOULD additionally layer per-IP and per-device limits as defense in depth.
+> The system MUST throttle authentication attempts (account lockout, exponential back-off, or rate limiting). Throttling MUST be account-scoped.
 
-**Rationale:** Per-IP throttling alone is trivially bypassed with distributed botnets. Account-scoped throttling protects the actual target. Layered scopes contain both targeted and credential-stuffing patterns.
-
-**Verification:** Any spec or plan covering login, password reset, or token-issuance endpoints MUST commit to a throttling mechanism, name its scope (account, plus optionally IP and device), and describe legitimate-recovery paths during lockout. Validate flags auth specs without a documented throttle, and flags specs whose only documented throttle scope is per-IP.
+**Verification:** Any spec or plan covering login, password reset, or token-issuance endpoints MUST commit to a throttling mechanism, name its account scope, and describe legitimate-recovery paths during lockout. `/papur:analyze` flags auth specs without a documented throttle, and flags specs whose only documented throttle scope is per-IP.
 
 **Source:** OWASP Authentication Cheat Sheet
 
 ### BE-AUTHN-008
 
-> Authentication credentials MUST be transmitted only over TLS. Login and credential-change endpoints MUST NOT be served over plain HTTP.
+> Authentication credentials MUST be transmitted only over TLS. Login and credential-change endpoints MUST NOT be served over plain HTTP, and a plain-HTTP request to one MUST be refused, not redirected to HTTPS.
 
-**Rationale:** Plaintext transmission exposes credentials to network observers. Serving login over HTTP — even with an HTTPS redirect — leaves a first-request window where credentials may be intercepted. Refer to `BE-DATA-001` for the required TLS protocol version.
-
-**Verification:** Any spec or plan covering authentication endpoints MUST commit to TLS-only access, including refusal of plain-HTTP requests at the edge. Validate flags auth-endpoint specs that allow HTTP fallback or that omit the transport question.
+**Verification:** Any spec or plan covering authentication or credential-change endpoints MUST commit to TLS-only access, including refusal of plain-HTTP requests at the edge. `/papur:analyze` flags such specs that allow HTTP fallback or another plaintext transport, that answer plain HTTP with a redirect, or that omit the transport question. **Not flagged:** a TLS protocol version below the minimum `BE-DATA-001` sets, and a plaintext leg past the endpoint's edge, behind a TLS-terminating proxy or onward to a directory, which `BE-DATA-001` owns.
 
 **Source:** OWASP Authentication Cheat Sheet
 
-### BE-AUTHN-009
-
-> Comparison of secrets, tokens, MACs, signatures, and password hashes MUST use a constant-time comparison primitive.
-
-**Rationale:** Standard string equality short-circuits on the first differing byte, leaking the matching prefix length via response timing. Constant-time comparison closes timing side channels for token validation, signature verification, and HMAC checks.
-
-**Verification:** Any spec or plan that introduces secret/token/HMAC/signature comparison MUST commit to a constant-time primitive (e.g., `crypto.timingSafeEqual`, `hmac.compare_digest`, `subtle.ConstantTimeCompare`, `MessageDigest.isEqual`). Validate flags specs that compare secrets with `==`, `===`, `equals`, `strcmp`, or any short-circuiting comparison.
-
-**Source:** OWASP Authentication Cheat Sheet, NIST SP 800-63B
-
 ### BE-AUTHN-010
 
-> Multi-factor authentication MUST be enforced for privileged accounts (administrators, role-managers, billing operators, security operators) and SHOULD be available to all accounts. Acceptable second factors are WebAuthn/passkeys (preferred), TOTP authenticator apps, or hardware security keys. SMS-delivered codes MUST NOT be the only available second factor for privileged accounts.
+> Multi-factor authentication MUST be enforced for privileged accounts (administrators, role-managers, billing operators, security operators). Acceptable second factors are WebAuthn/passkeys (preferred), TOTP authenticator apps, or hardware security keys. SMS-delivered codes MUST NOT be the only available second factor for privileged accounts.
 
-**Rationale:** Single-factor authentication is no longer sufficient against credential stuffing, phishing, and database leaks. Privileged accounts are the highest-value targets — compromising one administrator typically compromises the system. WebAuthn and TOTP are phishing-resistant or phishing-resilient; SMS is vulnerable to SIM-swap attacks and is the weakest mainstream second factor.
+**Verification:** Any spec or plan that introduces administrative, role-management, billing, or security-operator capabilities MUST commit to MFA enforcement for those accounts and MUST name the supported factor types. `/papur:analyze` flags privileged-feature specs that omit MFA, that allow SMS as the sole factor for privileged accounts, or that describe enrollment paths permitting administrators to skip MFA. **Not flagged:** TOTP as a privileged account's only factor type, whose lack of phishing resistance `BE-AUTHN-021` owns.
 
-**Verification:** Any spec or plan that introduces administrative, role-management, billing, or security-operator capabilities MUST commit to MFA enforcement for those accounts and MUST name the supported factor types. Validate flags privileged-feature specs that omit MFA, that allow SMS as the sole factor for privileged accounts, or that describe enrollment paths permitting administrators to skip MFA.
-
-**Source:** OWASP Authentication Cheat Sheet, NIST SP 800-63B
+**Source:** OWASP Multifactor Authentication Cheat Sheet, NIST SP 800-63B-4 §3.1.3.3
 
 ### BE-AUTHN-011
 
-> Password policy MUST follow NIST SP 800-63B: minimum length of 8 characters (12+ recommended), allow at least 64 characters, allow all printable Unicode and spaces, screen new passwords against a breached-password corpus, and reject compromised entries. Composition rules ("must include uppercase, digit, symbol") and forced periodic rotation MUST NOT be imposed; rotation MUST be required only on suspicion of compromise.
+> Password policy MUST follow NIST SP 800-63B-4: a minimum length of 15 characters when the password is the sole authenticator and 8 characters when it is used only as one factor of multi-factor authentication, allow at least 64 characters, allow all printable Unicode and spaces, screen each new password against a blocklist of commonly used, expected, or compromised passwords, and reject any password the blocklist contains. Composition rules ("must include uppercase, digit, symbol") and forced periodic rotation MUST NOT be imposed; rotation MUST be required only on suspicion of compromise.
 
-**Rationale:** Older "complexity + rotation" policies push users toward predictable patterns (`Password1!` → `Password2!`) and degrade actual entropy. NIST 800-63B (revised 2017, reaffirmed in subsequent drafts) replaces them with length-over-complexity plus breached-password screening — the policy that demonstrably reduces credential compromise.
+**Verification:** Any spec or plan that introduces password creation, change, or reset flows MUST commit to (a) the minimum and maximum length bounds, distinguishing a password that is the sole authenticator from one used only within MFA, (b) acceptance of the full printable-Unicode character set, (c) screening against a blocklist of commonly used, expected, or compromised passwords, and (d) absence of forced periodic rotation. `/papur:analyze` flags password-policy specs that mandate composition rules, that force calendar-based rotation, that omit blocklist screening, or that set a minimum below 15 characters for a password that is the sole authenticator.
 
-**Verification:** Any spec or plan that introduces password creation, change, or reset flows MUST commit to (a) the minimum and maximum length bounds, (b) acceptance of the full printable-Unicode character set, (c) screening against a breached-password list (e.g., HaveIBeenPwned k-anonymity API, local corpus), and (d) absence of forced periodic rotation. Validate flags password-policy specs that mandate composition rules, that force calendar-based rotation, or that omit breached-password screening.
-
-**Source:** NIST SP 800-63B §5.1.1, OWASP Authentication Cheat Sheet
+**Source:** NIST SP 800-63B-4 §3.1.1.2, OWASP Authentication Cheat Sheet
 
 ### BE-AUTHN-012
 
-> JWT-based authentication MUST (a) declare an explicit algorithm allowlist on the verifier and reject any token whose `alg` header is not in the allowlist; (b) reject the `none` algorithm unconditionally; (c) reject tokens whose `alg` does not match the key type expected for the `kid` (preventing HS/RS confusion attacks); (d) validate `iss`, `aud`, `exp`, and `nbf` claims on every verification; and (e) keep access-token lifetimes short (≤15 minutes for typical web sessions) with refresh-token rotation for longer-lived access.
+> JWT-based authentication MUST (a) declare an explicit algorithm allowlist on the verifier and reject any token whose `alg` header is not in the allowlist; (b) reject the `none` algorithm unconditionally; (c) reject tokens whose `alg` does not match the key type expected for the `kid`; (d) validate `iss`, `aud`, `exp`, and `nbf` claims on every verification; and (e) keep access-token lifetimes short (≤15 minutes for typical web sessions) with refresh-token rotation for longer-lived access.
 
-**Rationale:** JWT misuse is one of the most consistently exploited modern auth vulnerabilities. The `alg: none` bypass, HS/RS algorithm confusion (verifying an RS256 token's signature using the RSA public key as an HMAC secret), and missing claim validation each enable full authentication bypass. Short access tokens with rotated refresh tokens limit the damage when a token leaks.
+**Verification:** Any spec or plan that introduces JWT issuance or verification, an OIDC client's verification of an ID token's signature included, MUST commit to all five requirements, (e) where it issues tokens. `/papur:analyze` flags JWT specs that accept tokens without naming an algorithm allowlist, that omit `kid`-to-alg binding, that skip `iss`/`aud`/`exp`/`nbf` validation, or that propose long-lived access tokens without refresh-token rotation. **Not flagged:** in a spec or plan that introduces an OAuth client or authorization server, or introduces or changes the refresh tokens an authorization server issues to public clients, the protection of a refresh token issued to a public client, sender-constraining or rotation, which `security-cross.md` `SEC-AUTHN-003` owns; and, in a spec or plan that introduces an OIDC client or changes how it validates its ID tokens, the ID token's claims, which `security-cross.md` `SEC-AUTHN-002` (c) owns. In any other spec, (e) stays this rule's for a public client too, and a confidential client's rotation is this rule's in every spec; (d) asks none of an ID token's claims.
 
-**Verification:** Any spec or plan that introduces JWT issuance or verification MUST commit to all five requirements. Validate flags JWT specs that accept tokens without naming an algorithm allowlist, that omit `kid`-to-alg binding, that skip `iss`/`aud`/`exp`/`nbf` validation, or that propose long-lived access tokens without refresh-token rotation.
-
-**Source:** OWASP JSON Web Token for Java Cheat Sheet, RFC 8725 (JWT Best Current Practices)
-
-### BE-AUTHN-013
-
-> OAuth 2.0 and OIDC client flows MUST (a) include and verify a unique `state` parameter on every authorization request to defeat CSRF; (b) use PKCE (`code_challenge` / `code_verifier`) for every authorization-code flow, including confidential clients; (c) validate the `nonce` claim on OIDC ID tokens; and (d) validate redirect URIs against an exact-match allowlist registered with the authorization server.
-
-**Rationale:** Missing `state` enables login CSRF that hijacks the OAuth callback. Missing PKCE leaves authorization codes interceptable on the user agent's network. Loose redirect-URI matching (substring, prefix) is exploited via attacker-registered subpaths. RFC 9700 (OAuth 2.0 Security Best Current Practice, 2025) makes PKCE the requirement for all clients, not just public ones.
-
-**Verification:** Any spec or plan that introduces an OAuth client, OIDC client, or third-party login integration MUST commit to all four requirements. Validate flags OAuth/OIDC specs that omit `state`, that limit PKCE to public clients, that omit ID-token `nonce` validation, or that describe redirect-URI matching using `startsWith`/`contains`/regex instead of exact equality.
-
-**Source:** RFC 9700 (OAuth 2.0 Security Best Current Practice), OpenID Connect Core 1.0, OWASP Authentication Cheat Sheet
+**Source:** OWASP JSON Web Token Cheat Sheet, RFC 8725 §2.1, §3.1, §3.8, §3.9 (JSON Web Token Best Current Practices), OpenID Connect Core 1.0 §2 (the ID Token is a JWT)
 
 ### BE-AUTHN-014
 
-> Cookies that carry session identifiers, authentication tokens, or any other privileged credential MUST be issued with the `HttpOnly`, `Secure`, and `SameSite` attributes set. `SameSite` MUST be `Lax` or `Strict`; `SameSite=None` MUST be used only when cross-site transmission is genuinely required, MUST be paired with `Secure`, and MUST be justified in the spec. The `Domain` attribute SHOULD be omitted unless cross-subdomain sharing is explicitly required.
+> Cookies that carry session identifiers, authentication tokens, or any other privileged credential MUST be issued with the `HttpOnly`, `Secure`, and `SameSite` attributes set. `SameSite` MUST be `Lax` or `Strict`; `SameSite=None` MUST be used only when cross-site transmission is genuinely required, MUST be paired with `Secure`, and MUST be justified in the spec.
 
-**Rationale:** These attributes are set server-side in the `Set-Cookie` response header — the server is the only place they can be enforced. `HttpOnly` denies JavaScript (and therefore XSS) access to the cookie; `Secure` keeps it off plaintext connections; `SameSite` blocks the cross-site request path CSRF relies on. A backend-only service that never loads the frontend rule set still issues these cookies, so the requirement lives here as well as in the client-facing `FE-STORAGE-002` / `FE-CSRF-002`.
-
-**Verification:** Any spec or plan that issues a session, authentication, or other privileged cookie MUST commit to `HttpOnly`, `Secure`, and `SameSite` on the `Set-Cookie` path, and MUST justify any `SameSite=None` or explicit `Domain`. Validate flags cookie-issuing specs that omit any of the three attributes, that set `SameSite=None` without `Secure` and a justification, or that set `Domain` without justification.
+**Verification:** Any spec or plan that issues a session, authentication, or other privileged cookie MUST commit to `HttpOnly`, `Secure`, and `SameSite` wherever it sets the cookie, and MUST justify any `SameSite=None`. `/papur:analyze` flags cookie-issuing specs that omit any of the three attributes, or that set `SameSite=None` without `Secure` and a justification. Where `security-frontend.md` is also loaded, its `FE-STORAGE-002` and `FE-CSRF-002` name this rule as the owner of these attributes.
 
 **Source:** OWASP Session Management Cheat Sheet, OWASP HTTP Headers Cheat Sheet
+
+### BE-AUTHN-015
+
+> Authentication throttling SHOULD layer per-IP and per-device limits on top of the account-scoped limit `BE-AUTHN-007` requires.
+
+**Verification:** Any spec or plan covering login, password reset, or token-issuance endpoints SHOULD name per-IP and per-device limits alongside the account-scoped throttle. `/papur:analyze` emits a warning when an auth spec's only documented throttle scope is per-account.
+
+**Source:** OWASP Credential Stuffing Prevention Cheat Sheet, OWASP Authentication Cheat Sheet
+
+### BE-AUTHN-016
+
+> Multi-factor authentication SHOULD be available to all accounts, with the second factors `BE-AUTHN-010` accepts.
+
+**Verification:** Any spec or plan that introduces account authentication or account-security settings SHOULD commit to offering MFA enrollment to every account. `/papur:analyze` emits a warning when an authentication spec restricts MFA to privileged accounts or omits enrollment for ordinary ones.
+
+**Source:** OWASP Multifactor Authentication Cheat Sheet, OWASP Authentication Cheat Sheet
+
+### BE-AUTHN-017
+
+> The `Domain` attribute of a cookie that carries a session identifier, authentication token, or other privileged credential SHOULD be omitted unless cross-subdomain sharing is explicitly required.
+
+**Verification:** Any spec or plan that issues a session, authentication, or other privileged cookie SHOULD omit the `Domain` attribute, or justify cross-subdomain sharing where it sets one. `/papur:analyze` emits a warning when a cookie-issuing spec sets `Domain` without justification.
+
+**Source:** OWASP Session Management Cheat Sheet
+
+### BE-AUTHN-018
+
+> Password-reset and account-recovery flows MUST (a) issue a single-use token that expires within a bounded, documented window and is invalidated once used or once a newer token is issued for the account; (b) generate that token with a CSPRNG per `BE-DATA-009` and persist only a hash of it, as `BE-AUTHN-002` requires for tokens; (c) build the reset link from a configured base URL, never from the request's `Host` or forwarded-host headers; (d) on a successful reset, invalidate the account's existing sessions and any outstanding reset or recovery tokens, and require the user to sign in through the normal flow; and (e) not rely on security questions as the sole recovery factor. A saved recovery code for `BE-AUTHN-022`'s recovery — given at MFA setup, as the replacement for one used, or at the user's request — is kept by the user for later rather than used in the flow that issued it, so (a)'s expiry and newer-token invalidation and (d)'s sweep do not reach it; it MUST still be generated and stored as (b) requires, and invalidated and replaced once used.
+
+**Verification:** Any spec or plan that introduces password reset, account recovery, or "forgot password" flows MUST commit to all five properties and name the lifetime of each token the flow issues; one that gives users saved recovery codes MUST state how they are generated, stored, and replaced once used. `/papur:analyze` flags recovery specs that omit expiry or single-use invalidation for a token the flow issues, that persist a raw token or saved recovery code, that leave a saved recovery code valid after use or do not replace it, that derive the reset URL from the incoming request's host, that leave existing sessions valid after a reset (asking the user instead does not comply), or that offer security questions as the only recovery path. **Not flagged:** reset-endpoint responses that are not uniform, which `BE-AUTHN-006` owns, and an unthrottled reset endpoint, which `BE-AUTHN-007` owns.
+
+**Source:** OWASP Forgot Password Cheat Sheet, PortSwigger Web Security Academy — Password reset poisoning, NIST SP 800-63B-4 §4.2
+
+### BE-AUTHN-019
+
+> JWT verifiers MUST select the verification key only from key material configured in advance (a pinned key, or a JWKS fetched from the issuer's configured URL). Keys or key locations carried in the token header — `jwk`, `jku`, `x5u`, `x5c` — MUST NOT be trusted unless they resolve to that configured material (an allowlisted `jku`/`x5u` URL, or an `x5c` chain validated to a configured trust anchor). The `kid` header MUST be treated as untrusted input: it MAY select among configured keys, and MUST NOT reach a database query, file path, or URL without validation.
+
+**Verification:** Any spec or plan that introduces JWT verification, an OIDC client's verification of an ID token's signature included, MUST name where verification keys come from (static key, configured JWKS URL, configured trust anchor) and commit to ignoring token-supplied key material outside that set. `/papur:analyze` flags JWT specs that resolve keys from `jku`/`x5u` without an allowlist, that accept an embedded `jwk` or an `x5c` chain not validated to a configured anchor, or that use `kid` in a query, path, or URL without validation.
+
+**Source:** RFC 8725 §3.10 (Do Not Trust Received Claims), OWASP JSON Web Token Cheat Sheet, PortSwigger Web Security Academy — JWT attacks, OpenID Connect Core 1.0 §2 (the ID Token is a JWT)
+
+### BE-AUTHN-021
+
+> Multi-factor authentication for privileged accounts SHOULD require a phishing-resistant authenticator — WebAuthn/passkeys, FIDO2 hardware security keys, or PKI-based smart cards — rather than one-time codes or push approvals.
+
+**Verification:** Any spec or plan that introduces administrative, role-management, billing, or security-operator capabilities SHOULD commit to phishing-resistant authenticators for those accounts. `/papur:analyze` emits a warning when a privileged-feature spec accepts only one-time-code, push, or SMS factors for privileged accounts. An SMS-only privileged account is also `BE-AUTHN-010`'s, a separate defect: the SMS dependence, where this rule's is the missing phishing-resistant authenticator.
+
+**Source:** NIST SP 800-63B-4 §2.2.2, §3.2.5, OWASP Multifactor Authentication Cheat Sheet
+
+### BE-AUTHN-022
+
+> Changing an account's password or other authenticator, its email address or other recovery or notification contact, or its multi-factor settings (enrolling, replacing, or removing a factor, or turning MFA off) MUST require the user to re-authenticate within that change flow with an authenticator already bound to the account — the current password, or a fresh second-factor or passkey verification (step-up) — rather than relying on the existing session alone, subject to the sentences that follow. A change to the multi-factor settings of an account that already has a second factor enrolled — enrolling another factor, replacing or removing one, or turning MFA off — MUST require a fresh verification with an enrolled second factor or passkey; the current password alone does not authorize it. Enrolling a second factor on an account that has none needs only the re-authentication the first sentence requires, which the current password satisfies. An account with no local authenticator bound, which signs in only through an external identity provider, satisfies the first sentence with a fresh sign-in round trip through that provider within the change flow, one that authenticates the user anew rather than from the provider's existing session. A password reset through the recovery flow `BE-AUTHN-018` governs MAY proceed on its reset token instead. A user who has lost every enrolled second factor MAY likewise bind a replacement through account recovery, when that recovery takes two recovery codes obtained by different methods (saved in advance, issued to a recovery address, or sent to a recovery contact), one such code together with a single-factor authenticator bound to the account (the current password, for example), or repeated identity proofing; notifies the user through a channel independent of the recovery; and generates and stores each recovery code as `BE-AUTHN-018` requires of its tokens — from a CSPRNG, persisted only as a hash, and invalidated once used — with every code issued to a recovery address or sent to a recovery contact expiring within a bounded window.
+
+**Verification:** Any spec or plan that introduces a password change, an email or recovery-contact change, or MFA enrollment, replacement, removal, or disablement MUST name the re-authentication each of those changes requires (current password, second factor, or passkey, or for an account with no local authenticator bound a fresh sign-in through its identity provider), and a spec that lets a user who has lost every second factor bind a replacement MUST name the recovery that authorizes it. `/papur:analyze` flags account-settings specs that allow any of those changes on the strength of the existing session alone (for an account with no local authenticator bound, without a fresh sign-in through its identity provider), that accept a security question as the re-authentication, or that let the current password alone enroll another factor beside an enrolled one, replace or remove an enrolled factor, or turn MFA off, and flags a lost-factor recovery that binds a replacement on less than the Statement's recovery (the password alone, or one recovery code alone), that does not notify the user, or whose recovery codes are not generated, stored, invalidated, replaced and expired as the Statement and `BE-AUTHN-018` require. **Not flagged:** a session not regenerated after a step-up, which `BE-AUTHN-004` owns, and a password-reset token's lifetime or reuse, a reset link built from the request's host, sessions left valid after a reset, or security questions as the only recovery path, which `BE-AUTHN-018` owns.
+
+**Source:** OWASP Authentication Cheat Sheet, OWASP Multifactor Authentication Cheat Sheet, NIST SP 800-63B-4 §4.1.2.1, §4.2, §4.6
 
 ## BE-AUTHZ — Authorization
 
@@ -154,9 +162,7 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Access MUST be denied unless explicitly permitted. Authorization logic MUST NOT rely on the absence of a deny rule.
 
-**Rationale:** Default-allow plus selective-deny is brittle — every new endpoint inherits open access unless a developer remembers to add a deny rule. Default-deny plus explicit allow is the only durable posture.
-
-**Verification:** Any spec or plan that introduces a protected endpoint, resource, or operation MUST describe the explicit allow check (middleware, decorator, gateway policy). Validate flags any commitment phrased as "everything except X is public" or "deny these specific paths."
+**Verification:** Any spec or plan that introduces a protected endpoint, resource, or operation MUST describe the explicit allow check (middleware, decorator, gateway policy). `/papur:analyze` flags any commitment phrased as "everything except X is public" or "deny these specific paths."
 
 **Source:** OWASP Authorization Cheat Sheet
 
@@ -164,9 +170,7 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Authorization decisions MUST be made on the server. Client-supplied claims (roles, permissions, tenant IDs) MUST be revalidated against the server's authoritative store on every request.
 
-**Rationale:** Client-side authorization can be inspected, bypassed, or spoofed by direct API calls. Trusting client-supplied identity claims (e.g., a `tenant_id` in a request body) without server-side revalidation enables horizontal privilege escalation across tenants.
-
-**Verification:** Any spec or plan describing role-based, attribute-based, or multi-tenant access control MUST describe how the server validates the claim against its own data — not just trusts the input. Validate flags specs that pass tenant/role IDs from the client into data queries without a documented revalidation step.
+**Verification:** Any spec or plan describing role-based, attribute-based, or multi-tenant access control MUST describe how the server validates the claim against its own data — not just trusts the input. `/papur:analyze` flags specs that pass tenant/role IDs from the client into data queries without a documented revalidation step.
 
 **Source:** OWASP Authorization Cheat Sheet
 
@@ -174,9 +178,7 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Authorization MUST be checked on every request. Permission state MUST NOT be cached from a prior request or assumed from session establishment.
 
-**Rationale:** Permissions can change between requests — role revocation, account suspension, privilege downgrade. Caching permissions creates a window where revoked access continues to be honored.
-
-**Verification:** Any spec or plan that introduces a permission-checked operation MUST commit to per-request authorization (middleware, framework guard, dependency-injected check). Validate flags specs that describe loading permissions at session start and not revalidating on subsequent requests.
+**Verification:** Any spec or plan that introduces a permission-checked operation MUST commit to per-request authorization (middleware, framework guard, dependency-injected check). `/papur:analyze` flags specs that describe loading permissions at session start and not revalidating on subsequent requests.
 
 **Source:** OWASP Authorization Cheat Sheet
 
@@ -184,19 +186,15 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > A caller MUST NOT be able to grant permissions they do not themselves hold. Role-management and permission-grant operations MUST enforce a ceiling rule — the caller's effective permissions bound what they can assign.
 
-**Rationale:** Without a ceiling rule, any user with role-management access can escalate themselves or others to higher privilege. The ceiling rule contains lateral and vertical privilege escalation in a single check.
+**Verification:** Any spec or plan that introduces role grants, permission assignments, or admin invitations MUST commit to a ceiling check at the grant operation. `/papur:analyze` flags admin-management specs that describe assigning roles without a documented permissions-superset check on the caller.
 
-**Verification:** Any spec or plan that introduces role grants, permission assignments, or admin invitations MUST commit to a ceiling check at the grant operation. Validate flags admin-management specs that describe assigning roles without a documented permissions-superset check on the caller.
-
-**Source:** OWASP Authorization Cheat Sheet
+**Source:** CWE-269 (Improper Privilege Management), OWASP Authorization Cheat Sheet
 
 ### BE-AUTHZ-005
 
 > Authorization MUST be checked against the specific resource being accessed (object-level authorization), not just the resource type or endpoint.
 
-**Rationale:** A user authorized to read their own records MUST NOT be able to read another user's records by changing an ID parameter. This is OWASP API1:2023 — Broken Object Level Authorization (BOLA), the most-exploited API vulnerability.
-
-**Verification:** Any spec or plan that introduces resource-by-id endpoints (`/users/:id`, `/orders/:id`, `/projects/:id/files/:fileId`) MUST commit to an ownership or resource-scoped authorization check, not just a coarse "is this user authenticated" check. Validate flags resource endpoints whose authorization commitment is only at the type level (e.g., "any authenticated user can call /orders/:id").
+**Verification:** Any spec or plan that introduces resource-by-id endpoints (`/users/:id`, `/orders/:id`, `/projects/:id/files/:fileId`) MUST commit to an ownership or resource-scoped authorization check, not just a coarse "is this user authenticated" check. `/papur:analyze` flags resource endpoints whose authorization commitment is only at the type level (e.g., "any authenticated user can call /orders/:id").
 
 **Source:** OWASP Authorization Cheat Sheet, OWASP API Security Top 10 (API1:2023)
 
@@ -204,19 +202,15 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Authorization failures SHOULD return `404 Not Found` rather than `403 Forbidden` for resources whose existence should not be revealed to unauthorized callers.
 
-**Rationale:** A `403` confirms the resource exists, which is itself information leakage useful for reconnaissance and enumeration. A `404` reveals nothing about existence.
+**Verification:** Any spec or plan that introduces authorization on existence-sensitive resources (private documents, internal user records, draft content) SHOULD commit to `404` responses for unauthorized callers. `/papur:analyze` emits a warning when a spec explicitly proposes `403` for such resources without justification.
 
-**Verification:** Any spec or plan that introduces authorization on existence-sensitive resources (private documents, internal user records, draft content) SHOULD commit to `404` responses for unauthorized callers. Validate emits a warning when a spec explicitly proposes `403` for such resources without justification.
-
-**Source:** OWASP Authorization Cheat Sheet
+**Source:** RFC 9110 §15.5.4 (403 Forbidden)
 
 ### BE-AUTHZ-007
 
-> Request handlers that bind user input to persistence or domain objects MUST use an explicit allowlist of writable fields. Mass assignment of arbitrary input to model fields is forbidden.
+> Request handlers that bind user input to persistence or domain objects MUST use an explicit allowlist of writable fields.
 
-**Rationale:** Frameworks that auto-bind request bodies to model fields (Rails `params`, Spring `@RequestBody`, Express body-spread) let users set fields they shouldn't — admin flags, internal IDs, ownership references, billing tier — when those fields aren't excluded. The allowlist is the only safe default; the denylist (strong parameters with field exclusion) inevitably misses new fields added later.
-
-**Verification:** Any spec or plan that describes accepting structured input (form bodies, JSON requests) and persisting or assigning it to a domain object MUST commit to an allowlist of acceptable fields per endpoint. Validate flags any commitment to "auto-bind", "spread the body", "accept all fields", or "use the request body directly" without a corresponding allowlist mechanism (DTO, schema-validated input type, explicit `pick`/`select` of fields).
+**Verification:** Any spec or plan that describes accepting structured input (form bodies, JSON requests) and persisting or assigning it to a domain object MUST commit to an allowlist of acceptable fields per endpoint; a denylist of excluded fields is not one. `/papur:analyze` flags any commitment to "auto-bind", "spread the body", "accept all fields", or "use the request body directly" without a corresponding allowlist mechanism (DTO, schema-validated input type, explicit `pick`/`select` of fields).
 
 **Source:** OWASP API Security Top 10 (API3:2023 — Broken Object Property Level Authorization), OWASP Mass Assignment Cheat Sheet
 
@@ -224,21 +218,17 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > The system MUST provide a token-revocation mechanism that takes effect within a bounded, documented time window after a revocation event (logout, password change, role revocation, suspected compromise). For stateful sessions, server-side invalidation MUST be immediate. For stateless tokens (JWT, signed cookies), the system MUST either (a) maintain a revocation list checked on every verification, (b) keep access tokens short enough that the revocation window matches the access-token lifetime (per `BE-AUTHN-012`), or (c) bind tokens to a server-tracked session whose state is checked on each request.
 
-**Rationale:** A long-lived stateless token that cannot be revoked is a permanent credential — the gap between "we know it's compromised" and "it stops working" is the attacker's free time. Documented, bounded revocation closes that gap.
+**Verification:** Any spec or plan that introduces tokens, sessions, or any long-lived credential MUST commit to a revocation mechanism and state the maximum time between revocation and effect. `/papur:analyze` flags credential specs that omit the revocation question, that rely on token expiry as the only revocation mechanism without naming the maximum lifetime, or that describe immediate logout UX without a server-side invalidation step.
 
-**Verification:** Any spec or plan that introduces tokens, sessions, or any long-lived credential MUST commit to a revocation mechanism and state the maximum time between revocation and effect. Validate flags credential specs that omit the revocation question, that rely on token expiry as the only revocation mechanism without naming the maximum lifetime, or that describe immediate logout UX without a server-side invalidation step.
-
-**Source:** OWASP Session Management Cheat Sheet, RFC 8725
+**Source:** OWASP Session Management Cheat Sheet, OWASP JSON Web Token Cheat Sheet (JWT revocation)
 
 ## BE-INPUT — Input Validation
 
 ### BE-INPUT-001
 
-> All input crossing a system boundary MUST be validated server-side against an explicit schema before processing. Client-side validation is for UX only and MUST NOT be trusted.
+> All input crossing a system boundary MUST be validated server-side against an explicit schema before processing. Client-side validation MUST NOT be trusted.
 
-**Rationale:** Boundary validation gives the rest of the system a strong invariant — once data is in, it conforms. Client-side validation is bypassable by direct API calls.
-
-**Verification:** Any spec or plan that accepts input from clients, third-party APIs, message queues, or file ingestion MUST name a server-side validation mechanism (JSON Schema, type system with runtime guards, dedicated validator library) and commit to running it at the boundary. Validate flags input-handling paths without a named server-side validation step.
+**Verification:** Any spec or plan that accepts input from clients, third-party APIs, message queues, or file ingestion MUST name a server-side validation mechanism (JSON Schema, type system with runtime guards, dedicated validator library) and commit to running it at the boundary. `/papur:analyze` flags input-handling paths without a named server-side validation step.
 
 **Source:** OWASP Input Validation Cheat Sheet
 
@@ -246,69 +236,55 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Input validation MUST use allowlists (define what is acceptable) for constrained inputs. Denylists (block known-bad patterns) MUST NOT be used as the sole defense.
 
-**Rationale:** Denylists are inherently incomplete — every blocked pattern requires a developer to remember it. Allowlists fail closed: anything not explicitly allowed is rejected.
-
-**Verification:** When a spec or plan describes validation for constrained inputs (enums, formats, file types, slugs, identifiers), it MUST express the rule as an allowlist (regex anchoring acceptable characters, explicit enum, MIME type allowlist). Validate flags rules expressed only as "reject if matches X" or "block these characters" without a corresponding allowlist.
+**Verification:** When a spec or plan describes validation for constrained inputs (enums, formats, file types, slugs, identifiers), it MUST express the rule as an allowlist (regex anchoring acceptable characters, explicit enum, MIME type allowlist). `/papur:analyze` flags rules expressed only as "reject if matches X" or "block these characters" without a corresponding allowlist.
 
 **Source:** OWASP Input Validation Cheat Sheet
 
 ### BE-INPUT-003
 
-> Queries and commands sent to external interpreters (SQL databases, NoSQL stores, shell processes, OS command runners, search-engine query strings) MUST be built so that user input cannot alter the structure of the request. SQL and NoSQL access MUST use parameterized statements, prepared statements, or an ORM/driver that parameterizes by default. Shell or OS command execution MUST pass arguments as a vector (e.g., `execve`-style argument arrays, `subprocess.run([...], shell=False)`) rather than constructing a shell command string. Query strings, NoSQL operator documents (MongoDB `$where`, dynamic field projections), and command lines MUST NOT be constructed via string concatenation, interpolation, or template literals containing user input.
+> Queries and commands sent to external interpreters (SQL databases, NoSQL stores, shell processes, OS command runners, search-engine query strings) MUST be built so that user input cannot alter the structure of the request. SQL and NoSQL access MUST use parameterized statements, prepared statements, or an ORM/driver that parameterizes by default. Shell or OS command execution MUST pass arguments as a vector (e.g., `execve`-style argument arrays, `subprocess.run([...], shell=False)`) rather than constructing a shell command string. Query strings, NoSQL operator documents (MongoDB `$where`, `$regex`, `$expr`), and command lines MUST NOT be constructed via string concatenation, interpolation, or template literals containing user input. A request value placed in a NoSQL query MUST first be checked to be the expected scalar type.
 
-**Rationale:** Injection remains one of the most exploited vulnerability classes. Parameterization (for SQL/NoSQL) and argument-vector invocation (for shells) make injection structurally impossible — the driver or kernel, not the application, handles escaping and tokenization. A single rule covers all interpreter boundaries because the failure mode is identical: user data being parsed as code.
+**Verification:** Any spec or plan that introduces database access, shell-out, or command execution MUST describe the safe-invocation mechanism the Statement requires and, for NoSQL, how query values are type-checked. `/papur:analyze` flags any commitment to building queries via concatenation, `f-string`/`.format()`, template literals interpolating request fields, dynamic NoSQL operator construction from client input, NoSQL filters that take request values without checking that each is the expected scalar type, or shell invocation with `shell=True`/string-concatenated command lines.
 
-**Verification:** Any spec or plan that introduces database access, shell-out, or command execution MUST describe the safe-invocation mechanism (parameterized statements, prepared statements, ORM defaults, argument-vector exec). Validate flags any commitment to building queries via concatenation, `f-string`/`.format()`, template literals interpolating request fields, dynamic NoSQL operator construction from client input, or shell invocation with `shell=True`/string-concatenated command lines.
-
-**Source:** OWASP SQL Injection Prevention Cheat Sheet, OWASP Command Injection Prevention Cheat Sheet, OWASP NoSQL Injection Prevention Cheat Sheet
+**Source:** OWASP SQL Injection Prevention Cheat Sheet, OWASP OS Command Injection Defense Cheat Sheet, OWASP NoSQL Security Cheat Sheet
 
 ### BE-INPUT-004
 
 > User-supplied values MUST NOT be used directly in filesystem paths. Filesystem operations MUST resolve the canonical path and verify it falls within the expected base directory before opening the file.
 
-**Rationale:** Path traversal (`../../../etc/passwd`) lets attackers read or write arbitrary files when user input flows into file paths without canonicalization-and-base-check.
+**Verification:** Any spec or plan that opens, reads, writes, or serves files based on user input (filename parameter, upload destination, template path, entry names of an uploaded archive being extracted) MUST commit to path canonicalization followed by a containment check that compares whole path components, not a bare string prefix (e.g., Python `os.path.realpath` + `os.path.commonpath`, or a resolved path tested against the base directory plus a trailing separator; a check like `startsWith(baseDir)` alone accepts `/srv/base2` for `/srv/base`) before opening. User input here includes an operator-set environment variable or configuration value, and text committed to the repository that the code turns into a path. A lexical screen (refusing `..`, absolute and rooted paths) or an allowlist of name characters does not meet this on its own, since a symbolic link under the base still resolves outside it; a design meets it by committing to canonicalization and containment itself, or by pointing at a containment mechanism the project already defines. `/papur:analyze` flags file-handling specs that take user input without a documented canonicalization step, including those whose only containment is a lexical screen or a character allowlist.
 
-**Verification:** Any spec or plan that opens, reads, writes, or serves files based on user input (filename parameter, upload destination, template path) MUST commit to path canonicalization (e.g., `path.resolve` + `startsWith(baseDir)`, `os.path.realpath` + `commonpath`, language-equivalent) before opening. Validate flags file-handling specs that take user input without a documented canonicalization step.
-
-**Source:** OWASP Input Validation Cheat Sheet
+**Source:** CWE-22 (Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')), Python documentation — `os.path` (`commonpath`, `commonprefix`)
 
 ### BE-INPUT-005
 
 > File uploads MUST validate file type by content inspection (magic bytes / signature), not by Content-Type header or filename extension alone. Uploaded files MUST be stored outside the web root, and stored filenames MUST be generated server-side, not taken from user input.
 
-**Rationale:** Client-supplied Content-Type and filename are trivially spoofed. Storing in the web root enables direct execution of uploaded content. User-controlled filenames enable path traversal and overwrite attacks against existing files.
-
-**Verification:** Any spec or plan that introduces file upload MUST commit to (a) content-based file-type validation, (b) storage outside the document root, and (c) server-generated filenames. Validate flags upload specs missing any of these three.
+**Verification:** Any spec or plan that introduces file upload MUST commit to the Statement's three controls. `/papur:analyze` flags an upload spec missing any of them.
 
 **Source:** OWASP File Upload Cheat Sheet
 
 ### BE-INPUT-006
 
-> Inputs that contribute to resource consumption (request bodies, file uploads, list lengths, page sizes, regex inputs) MUST have explicit upper bounds. Requests exceeding limits MUST be rejected with `413 Payload Too Large` (or the format-appropriate equivalent).
+> Inputs that contribute to resource consumption (request bodies, file uploads, list lengths, page sizes, regex inputs) MUST have explicit upper bounds. Request content over its size limit MUST be rejected with `413 Content Too Large` (RFC 9110 §15.5.14; formerly "Payload Too Large"); a parameter over its maximum (a list length, a page size) MUST be rejected with a `400`-class client error or, for a page size, clamped to the documented maximum (`api-backend.md` `BE-PAGE-001` names it). Non-HTTP protocols MUST use their equivalent rejection.
 
-**Rationale:** Unbounded inputs enable denial-of-service through memory exhaustion, payload bombs, and ReDoS. Bounds turn DoS attempts into clean rejections.
+**Verification:** Any spec or plan that accepts variable-size input (file uploads, JSON bodies, list parameters, search queries, paginated endpoints) MUST commit to a maximum size or count and to the rejection response. `/papur:analyze` flags input descriptions without explicit limits, particularly for uploads, bulk endpoints, and search queries that accept user-supplied regex.
 
-**Verification:** Any spec or plan that accepts variable-size input (file uploads, JSON bodies, list parameters, search queries, paginated endpoints) MUST commit to a maximum size or count and to the rejection response. Validate flags input descriptions without explicit limits, particularly for uploads, bulk endpoints, and search queries that accept user-supplied regex.
-
-**Source:** OWASP REST Security Cheat Sheet
+**Source:** OWASP REST Security Cheat Sheet, RFC 9110 §15.5.14, RFC 7231 §6.5.11
 
 ### BE-INPUT-007
 
 > When the server fetches a URL supplied or influenced by user input, the destination MUST be validated against an allowlist of acceptable hosts or schemes, AND outbound requests MUST be denied by default to internal address ranges (loopback `127.0.0.0/8`, link-local `169.254.0.0/16`, RFC 1918 `10.0.0.0/8` / `172.16.0.0/12` / `192.168.0.0/16`, IPv6 equivalents, and cloud metadata endpoints).
 
-**Rationale:** Server-Side Request Forgery (SSRF) lets attackers make the server fetch arbitrary URLs, often as a stepping stone to cloud metadata services (`169.254.169.254` for AWS/GCP/Azure), internal admin panels, or arbitrary intranet probing. OWASP A10:2021 / API6:2023.
+**Verification:** Any spec or plan that includes server-side URL fetching, webhook callbacks, image proxies, RSS pulls, or any user-supplied URL retrieval MUST commit to (a) host or scheme allowlisting, AND (b) outbound network restrictions or DNS-resolution-time blocks for internal address ranges. `/papur:analyze` flags outbound-fetch features without both commitments. Cloud metadata-address denial MUST be named explicitly when the project deploys to a cloud provider. **Not flagged:** a check on the submitted URL that a redirect, DNS rebinding, or an alternative address encoding bypasses, which `BE-INPUT-016` owns, as it owns the client's lookup of a forward proxy's own host that the operator configures for the process, an internal address included, which it exempts from these checks.
 
-**Verification:** Any spec or plan that includes server-side URL fetching, webhook callbacks, image proxies, RSS pulls, or any user-supplied URL retrieval MUST commit to (a) host or scheme allowlisting, AND (b) outbound network restrictions or DNS-resolution-time blocks for internal address ranges. Validate flags outbound-fetch features without both commitments. Cloud metadata-address denial MUST be named explicitly when the project deploys to a cloud provider.
-
-**Source:** OWASP SSRF Prevention Cheat Sheet, OWASP API Security Top 10 (API6:2023)
+**Source:** OWASP Server-Side Request Forgery Prevention Cheat Sheet
 
 ### BE-INPUT-008
 
 > Deserialization of untrusted input MUST use a format and parser that cannot execute code as a side effect of parsing.
 
-**Rationale:** Pickle (Python), `ObjectInputStream` (Java), `unserialize` (PHP), `Marshal.load` (Ruby), and similar binary deserialization formats can execute attacker-controlled code as part of parsing — a direct path to remote code execution. JSON, MessagePack, Protobuf, and similar data-only formats do not have this property.
-
-**Verification:** Any spec or plan that ingests data from clients, queues, files, or third-party APIs MUST name the serialization format. Validate flags any commitment to Pickle, `ObjectInputStream`, PHP `unserialize`, or `Marshal.load` for untrusted input. JSON, MessagePack, and Protobuf are acceptable. YAML is acceptable only when the spec names a safe-loading mode explicitly (e.g., `yaml.safe_load` in Python, `SafeYAML` in Ruby).
+**Verification:** Any spec or plan that ingests data from clients, queues, files, or third-party APIs MUST name the serialization format. `/papur:analyze` flags any commitment to a native object-serialization format that can execute code as it parses, such as Pickle, `ObjectInputStream`, PHP `unserialize`, `Marshal.load`, or `BinaryFormatter`, for untrusted input, and flags polymorphic type handling driven by type names in untrusted payloads (such as Jackson default typing, or Json.NET `TypeNameHandling` other than `None`). JSON, MessagePack, and Protobuf are acceptable when bound to fixed types. YAML is acceptable only when the spec names a safe-loading mode explicitly (e.g., `yaml.safe_load` in Python, `YAML.safe_load` in Ruby's Psych, SnakeYAML's `SafeConstructor` in Java).
 
 **Source:** OWASP Deserialization Cheat Sheet
 
@@ -316,9 +292,7 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > XML parsers MUST be configured to disable external entity expansion, DTD processing, and parameter entity expansion before parsing untrusted input.
 
-**Rationale:** Default XML parser configurations in many languages allow XXE — external entity expansion that can read local files (`file:///etc/passwd`), perform SSRF via entity URLs, or trigger denial-of-service via billion-laughs attacks. Disabling these features at parser construction is the only reliable mitigation.
-
-**Verification:** Any spec or plan that parses XML from untrusted sources (SOAP services, SAML responses, document uploads, RSS, configuration imports) MUST commit to a hardened parser configuration (`disallow-doctype-decl`, `external-general-entities=false`, `external-parameter-entities=false`, language-equivalent settings) at parser construction. Validate flags XML-parsing specs without an explicit hardening commitment, and flags reliance on default parser settings.
+**Verification:** Any spec or plan that parses XML from untrusted sources (SOAP services, SAML responses, document uploads, RSS, configuration imports) MUST commit to a hardened parser configuration (`disallow-doctype-decl`, `external-general-entities=false`, `external-parameter-entities=false`, language-equivalent settings) at parser construction. `/papur:analyze` flags XML-parsing specs without an explicit hardening commitment, and flags reliance on default parser settings.
 
 **Source:** OWASP XML External Entity Prevention Cheat Sheet
 
@@ -326,49 +300,39 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > User input MUST NOT be concatenated or interpolated into template strings rendered by a server-side template engine. User input MAY be passed only as bound variables to a template whose source is controlled by the application.
 
-**Rationale:** Server-Side Template Injection (SSTI) in Jinja, Twig, ERB, Handlebars, Velocity, etc. enables arbitrary code execution or template-sandbox escape when user input becomes part of the template *text* (not template *data*). Treating user input as data — values bound to variables — is safe; treating it as template source is not.
+**Verification:** Any spec or plan that uses server-side template rendering MUST describe how user input flows into templates, and commit to the Statement's bound variables as the only way in. `/papur:analyze` flags any commitment to building template strings dynamically from user input, or rendering templates whose source is partially user-controlled, whether or not the engine is sandboxed.
 
-**Verification:** Any spec or plan that uses server-side template rendering MUST describe how user input flows into templates: only as bound variables, never as concatenated template text. Validate flags any commitment to building template strings dynamically from user input, or rendering templates whose source is partially user-controlled.
-
-**Source:** OWASP Server-Side Template Injection guidance, PortSwigger SSTI research
+**Source:** OWASP Server-Side Template Injection Prevention Cheat Sheet, OWASP Web Security Testing Guide v4.2 — Testing for Server-side Template Injection (WSTG-INPV-18)
 
 ### BE-INPUT-011
 
-> User-supplied values written to logs MUST be sanitized for control characters (`\r`, `\n`, `\t`, ANSI escape sequences) before being emitted, OR the log emitter MUST encode each field as a structured value (JSON, key-value pairs with quoted strings) so that embedded newlines cannot forge new log lines.
+> User-supplied values written to logs MUST be sanitized for control characters (`\r`, `\n`, `\t`, ANSI escape sequences) before being emitted, OR the log emitter MUST encode each field as a structured value (JSON, key-value pairs with quoted strings).
 
-**Rationale:** Log-injection (CRLF injection into log files) lets an attacker forge fake log entries — "user `admin` authenticated successfully" — to mislead investigators, smuggle malicious content past log-aggregation parsers, or pollute SIEM correlation. Structured logging makes the attack structurally impossible because the field is always quoted; sanitization is acceptable for plain-text loggers.
-
-**Verification:** Any spec or plan that introduces logging of user-controlled values (request paths, headers, body fragments, usernames) MUST commit to either structured-log emission or pre-emission sanitization of control characters. Validate flags logging specs that string-concatenate user-controlled values into a plain-text logger without a sanitization step.
+**Verification:** Any spec or plan that introduces logging of user-controlled values (request paths, headers, body fragments, usernames) MUST commit to one of the Statement's two safeguards. `/papur:analyze` flags logging specs that string-concatenate user-controlled values into a plain-text logger without a sanitization step.
 
 **Source:** OWASP Logging Cheat Sheet, CWE-117 (Improper Output Neutralization for Logs)
 
 ### BE-INPUT-012
 
-> When the application generates CSV, TSV, or Excel-readable output containing user-supplied values, each cell whose content starts with `=`, `+`, `-`, `@`, `\t`, or `\r` MUST be prefixed with a single quote (`'`) or wrapped in a way that prevents spreadsheet formula execution on open.
+> When the application generates CSV, TSV, or Excel-readable output containing user-supplied values, each cell whose content starts with `=`, `+`, `-`, `@`, tab (`0x09`), carriage return (`0x0D`), line feed (`0x0A`), or a full-width form of the first four (`＝`, `＋`, `－`, `＠`) MUST be prefixed with a single quote (`'`) or wrapped in a way that prevents spreadsheet formula execution on open.
 
-**Rationale:** CSV formula injection (a.k.a. "spreadsheet injection") lets an attacker stash a payload like `=cmd|'/c calc.exe'!A1` in a free-text field; when a finance or operations user opens the downloaded report in Excel/LibreOffice/Numbers, the formula executes with the user's local privileges. The escape is a single-character prefix that costs nothing and closes the entire class.
+**Verification:** Any spec or plan that introduces CSV, TSV, or Excel-format export of user-supplied content MUST commit to formula-escaping per cell. `/papur:analyze` flags export specs that describe writing user-supplied strings directly into spreadsheet output without naming an escape.
 
-**Verification:** Any spec or plan that introduces CSV, TSV, or Excel-format export of user-supplied content MUST commit to formula-escaping per cell. Validate flags export specs that describe writing user-supplied strings directly into spreadsheet output without naming an escape.
-
-**Source:** OWASP CSV Injection guidance, CWE-1236
+**Source:** OWASP CSV Injection (attack page), CWE-1236 (Improper Neutralization of Formula Elements in a CSV File)
 
 ### BE-INPUT-013
 
-> Front-end reverse proxies, load balancers, and application servers MUST be configured so that HTTP request smuggling is structurally prevented. The deployment MUST commit to one of: (a) HTTP/2 end-to-end (no HTTP/1.1 downgrades between proxy and app), (b) explicit framing reconciliation (proxy and app agree on `Content-Length` vs `Transfer-Encoding` priority; ambiguous requests are rejected), or (c) a single-tier deployment with no proxy-to-app HTTP boundary. Duplicate `Content-Length` headers or `Transfer-Encoding` plus `Content-Length` on the same request MUST be rejected by the edge.
+> Front-end reverse proxies, load balancers, and application servers MUST be configured so that HTTP request smuggling is structurally prevented. The deployment MUST commit to one of: (a) HTTP/2 end-to-end (no HTTP/1.1 downgrades between proxy and app), (b) explicit framing reconciliation (proxy and app agree on `Content-Length` vs `Transfer-Encoding` priority; ambiguous requests are rejected), or (c) a single-tier deployment with no proxy-to-app HTTP boundary. The edge MUST reject a request that carries both `Transfer-Encoding` and `Content-Length`, or that carries `Content-Length` values that differ — whether as repeated header lines or as one comma-separated list. A request whose `Content-Length` values are all identical MAY be accepted, provided the edge replaces them with a single instance of that value before processing or forwarding the request.
 
-**Rationale:** HTTP request smuggling (CL.TE, TE.CL, TE.TE, H2.CL, H2.TE) exploits framing disagreements between two HTTP parsers in series to inject hidden requests that bypass front-end controls. The class affects nearly every reverse-proxy/app pair when defaults disagree, and the impact ranges from cache poisoning to full session hijacking.
+**Verification:** Any spec or plan covering deployment topology, edge configuration, or `system.md` MUST commit to one of the three structural mitigations. `/papur:analyze` flags topology specs that describe an HTTP/1.1 proxy-to-app boundary without naming a framing-reconciliation policy, edge configurations that accept a request the Statement has the edge reject, and edges that forward repeated identical `Content-Length` values without collapsing them to one.
 
-**Verification:** Any spec or plan covering deployment topology, edge configuration, or `system.md` MUST commit to one of the three structural mitigations. Validate flags topology specs that describe an HTTP/1.1 proxy-to-app boundary without naming a framing-reconciliation policy, and flags edge configurations that accept ambiguous framing instead of rejecting it.
-
-**Source:** PortSwigger HTTP Request Smuggling research, OWASP Web Security Testing Guide
+**Source:** PortSwigger Web Security Academy — HTTP request smuggling, OWASP Web Security Testing Guide v4.2 — Testing for HTTP Splitting Smuggling (WSTG-INPV-15), RFC 9112 §6.3 (Message Body Length), RFC 9110 §5.3 (Field Order), §8.6 (Content-Length)
 
 ### BE-INPUT-014
 
 > GraphQL endpoints MUST commit to (a) a maximum query depth, (b) a maximum query complexity (cost analysis), (c) introspection disabled in production, (d) field-level authorization enforced server-side, and (e) batching limits or rate limits expressed per-field rather than per-HTTP-request.
 
-**Rationale:** GraphQL's flexibility is a double-edged sword: a single request can recursively expand into thousands of subqueries (`{user { friends { friends { friends { ... }}}}}`), enumerate the entire schema via introspection, or bypass per-endpoint rate limits by batching many operations into one HTTP call. Each of the five controls closes one of these escape hatches.
-
-**Verification:** Any spec or plan that introduces a GraphQL endpoint MUST commit to all five controls. Validate flags GraphQL specs that omit depth/complexity limits, that leave introspection enabled in production, that describe authorization only at the endpoint level, or that omit batching/per-field rate limits.
+**Verification:** Any spec or plan that introduces a GraphQL endpoint MUST commit to all five controls. `/papur:analyze` flags a GraphQL spec that omits any of them, including one that leaves introspection enabled in production or describes authorization only at the endpoint level.
 
 **Source:** OWASP GraphQL Cheat Sheet
 
@@ -376,61 +340,57 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > LDAP queries MUST escape user-supplied values according to RFC 4515 (search filter) and RFC 4514 (distinguished name) before insertion into a filter or DN string, OR MUST use a library API that performs parameterization automatically. Search filters and DNs MUST NOT be built by string concatenation of unescaped user input.
 
-**Rationale:** LDAP injection lets an attacker turn a username lookup into an authentication bypass (`*)(&(uid=*)` collapses an `(&(uid=...)(...))` filter into one that matches every entry). Parameterized LDAP APIs and RFC 4515/4514 escaping prevent the structural change.
-
-**Verification:** Any spec or plan that introduces LDAP queries (directory lookups, AD authentication, group membership checks) MUST commit to parameterized filter/DN construction or to escape-per-field. Validate flags LDAP specs that concatenate user input into filter strings without naming an escape function or parameterized API.
+**Verification:** Any spec or plan that introduces LDAP queries (directory lookups, AD authentication, group membership checks) MUST commit to parameterized filter/DN construction or to escape-per-field. `/papur:analyze` flags LDAP specs that concatenate user input into filter strings without naming an escape function or parameterized API.
 
 **Source:** OWASP LDAP Injection Prevention Cheat Sheet, RFC 4514, RFC 4515
+
+### BE-INPUT-016
+
+> Server-side URL fetches subject to `BE-INPUT-007` MUST enforce its destination checks on the connection actually made, not only on the URL as submitted: the client MUST connect only to an IP address that passed validation, either the one the check resolved or one a connect-time lookup returns and screens against the same checks, never one a second, unchecked lookup returns, MUST disable automatic redirect following or re-validate every redirect target against the same checks, and MUST parse and normalize the host before comparison so alternative address encodings (hex, octal, dword, mixed, URL-encoded) cannot slip past the internal-range denial. A fetch routed through a forward proxy the operator configures for the process, never one the fetched URL or a redirect names, whichever of the operator's proxies the URL's scheme or `NO_PROXY` picks, MAY leave resolving the destination to that proxy, which is then the trust boundary for the hosts it serves: the client's lookup of the proxy's own host by name, which the operator chose, is exempt from the destination checks wherever the client connects to that host, while the checks still apply to the submitted URL and to every redirect target before it is requested, one naming the proxy's host included, and every other connection the client resolves itself, to a host the proxy does not serve included, still connects only to an address that passed validation.
+
+**Verification:** Any spec or plan that introduces server-side URL fetching (webhook delivery, image proxies, link previews, import-from-URL) MUST describe how the connection is held to an address that passed validation, pinned to the one the check resolved or screened by a connect-time lookup against the same checks, or that a forward proxy the operator configures resolves it, and how redirects are handled. `/papur:analyze` flags outbound-fetch specs that validate a hostname and then hand the URL to a client that resolves it again without screening the addresses that lookup returns, that leave redirect following enabled without per-hop validation, or that compare hosts as raw strings. **Not flagged:** a fetch through a forward proxy the operator configures for the process, never one the fetched URL or a redirect names, that leaves resolving the destination to the proxy, where the spec still screens the submitted URL and every redirect target before it is requested and pins, or screens at connect, every other connection the client resolves itself; and the client's unscreened lookup of that proxy's own host by name, one for a submitted URL or redirect target naming it included once that target passed the checks.
+
+**Source:** OWASP Server-Side Request Forgery Prevention Cheat Sheet, RFC 9110 §9.3.6 (CONNECT)
 
 ## BE-DATA — Data Protection
 
 ### BE-DATA-001
 
-> All network communication that crosses a host boundary MUST use TLS 1.2 or later. Plaintext protocols MUST NOT be used for any host-to-host data exchange in production. Loopback (`127.0.0.0/8`, `::1`) traffic between cooperating processes on the same host MAY use plaintext when those processes share the host's trust boundary (e.g., a sidecar proxy that terminates mTLS at the loopback edge); the use of loopback plaintext MUST be documented in `specs/system.md`.
+> All network communication that crosses a host boundary MUST use TLS 1.2 or later. Plaintext protocols MUST NOT be used for any host-to-host data exchange in production. Traffic between a host and network-attached block storage crosses a host boundary, and MAY be protected by the storage path's own encryption instead of TLS: IPsec for iSCSI, or a platform's in-transit encryption for a volume it attaches. Loopback (`127.0.0.0/8`, `::1`) traffic between cooperating processes on the same host MAY use plaintext when those processes share the host's trust boundary (e.g., a sidecar proxy that terminates mTLS at the loopback edge); the use of loopback plaintext MUST be documented in `specs/system.md`.
 
-**Rationale:** Unencrypted traffic on a network is trivially intercepted. TLS 1.0 and 1.1 are formally deprecated by IETF (RFC 8996); TLS 1.2 is the floor and TLS 1.3 is preferred. The loopback exception exists because service-mesh sidecars (Istio, Linkerd, Consul Connect) and similar local proxies terminate mTLS at the host boundary and hand off plaintext over loopback to the application — re-encrypting loopback adds cost without changing the threat model.
+**Verification:** Any spec or plan covering network communication (a database connection included), edge configuration, or `system.md` MUST commit to TLS 1.2+ across all host-crossing surfaces (HTTPS, gRPC, message brokers, database connections), and one that places data on network-attached block storage (an iSCSI volume, or a block volume a cloud platform attaches) MUST name that storage path's in-transit protection: TLS 1.2+, IPsec, or the platform's in-transit encryption. `/papur:analyze` flags specs that allow plaintext protocols for host-to-host traffic, that name TLS 1.0/1.1, or that omit the TLS version question entirely, and flags a spec placing data on network-attached block storage that names no in-transit protection for it. Plaintext loopback exceptions MUST be documented in `specs/system.md`. **Not flagged:** a client's plaintext access to an authentication or credential-change endpoint at its edge, plain HTTP, an HTTP fallback, a redirect to HTTPS or a spec silent on that endpoint's transport included, which `BE-AUTHN-008` owns, a leg past that edge, behind a TLS-terminating proxy or onward to a directory, staying this rule's; a leg that stays on the host: a loopback connection whose plaintext is documented in `specs/system.md`, one whose spec names no TLS included; a connection over a Unix-domain socket, or over a named pipe on the same host; and an in-process database, unless its spec places its data on a network file system, on network-attached block storage or at a remote URL. Each leg is judged on its own: where an exchange goes on to another host, through a named pipe to another host, through a proxy behind a loopback connection, socket or pipe, or to an in-process database's data on a network file system, on network-attached block storage or at a remote URL, the leg that reaches the other host is judged like any other, and the leg on the host keeps its exemption. A loopback connection whose plaintext is not documented in `specs/system.md` is flagged, one whose spec names no TLS included.
 
-**Verification:** Any spec or plan covering network communication, edge configuration, or `system.md` MUST commit to TLS 1.2+ across all host-crossing surfaces (HTTPS, gRPC, message brokers, database connections). Validate flags specs that allow plaintext protocols for host-to-host traffic, that name TLS 1.0/1.1, or that omit the TLS version question entirely. Plaintext loopback exceptions MUST be named explicitly with the sidecar/proxy that provides the encrypted host-boundary leg.
-
-**Source:** OWASP Cryptographic Storage Cheat Sheet, RFC 8996, NIST SP 800-52r2
+**Source:** OWASP Transport Layer Security Cheat Sheet, RFC 8996, NIST SP 800-52r2, Linux man-pages — unix(7), Microsoft Win32 documentation — Named Pipes, SQLite documentation — SQLite Over a Network, RFC 7143 (iSCSI), Amazon EBS User Guide — How Amazon EBS encryption works
 
 ### BE-DATA-002
 
 > Sensitive data (PII, credentials, financial data, authentication tokens) MUST be encrypted at rest. Encryption keys MUST NOT be retrievable through the same compromise that exposes the ciphertext — that is, a single read of the database, the database backup, or the database service account MUST NOT also yield the keys. Acceptable architectures include envelope encryption with a remote KMS/HSM, transparent encryption where the data keys are sealed by a host-level keystore the database account cannot read, and application-level field encryption with keys held by the application's secret manager. Storing keys as plaintext columns or table rows alongside the data they encrypt MUST NOT be used.
 
-**Rationale:** The goal is that one credential or one breach yields only ciphertext, not both ciphertext and keys. Strict spatial separation (KMS over the network) is the strongest form, but transparent database encryption with filesystem-sealed keys is also acceptable because the database service account cannot read the keystore. The failure mode to prevent is keys living *inside the same data store* (a `keys` table next to the `users` table) or in the same backup stream as the encrypted data.
-
-**Verification:** Any spec or plan that persists sensitive data MUST name (a) the encryption mechanism (envelope encryption with KMS, transparent database encryption, application-level field encryption) and (b) the key custody — what principal can read the keys and how that principal is distinct from the principal that can read the ciphertext. Validate flags persistence specs that say only "encrypted" without naming the mechanism, and flags any commitment to storing keys as data rows within the same database as the data they encrypt.
+**Verification:** Any spec or plan that persists sensitive data MUST name (a) the encryption mechanism and (b) the key custody — what principal can read the keys and how that principal is distinct from the principal that can read the ciphertext. `/papur:analyze` flags persistence specs that say only "encrypted" without naming the mechanism, and flags any commitment to storing keys as data rows within the same database as the data they encrypt.
 
 **Source:** OWASP Cryptographic Storage Cheat Sheet
 
 ### BE-DATA-003
 
-> Secrets (API keys, database credentials, encryption keys, signing keys, third-party tokens) MUST NOT be hardcoded in source code, committed to version control, embedded in container images, or stored in environment-variable defaults shipped with the application. Secrets MUST be sourced at runtime from a secrets management system or runtime injection by the orchestrator.
+> Secrets (API keys, database credentials, encryption keys, signing keys, third-party tokens) that the running application uses MUST be sourced at runtime — from a secrets management system, by the orchestrator's runtime injection (an environment variable or a secret volume), or from a file on the host, however it is placed there (mounted, placed at deploy, or generated at install), that no account but the application's and the host administrator's can read.
 
-**Rationale:** Committed secrets propagate everywhere — git history, CI logs, image layers, developer laptops, error pages — and can never be fully scrubbed. Externalized secrets via a secret manager or runtime injection are the only reliable model.
-
-**Verification:** Any spec or plan that introduces secrets MUST describe how they are sourced at runtime (vault/secret manager, mounted file, runtime environment variable injected by the orchestrator). Validate flags any commitment to embedding secrets in `.env` files committed to git, `Dockerfile` `ENV` directives, default config files in the repo, or container image layers.
+**Verification:** Any spec or plan that introduces secrets the running application uses MUST describe how they are sourced at runtime (vault/secret manager, runtime injection by the orchestrator as an environment variable or a secret volume, a file on the host and the accounts that can read it). `/papur:analyze` flags secret-introducing specs and plans that do not say how each such secret is sourced at runtime, that name a secret file on the host, other than an orchestrator's secret volume, without the accounts that can read it, or whose such file an account other than the application's and the host administrator's can read. Where a running container that the spec or plan describes uses the secret, an unnamed injection into that container is `BE-DATA-008`'s; an unnamed runtime source for anything else that uses the secret stays this rule's. A secret kept somewhere a runtime source should replace is that placement's defect: `configuration-cross.md` `CFG-ENV-001`'s for an in-application default value (a fallback the application's own code supplies when the configured value is absent), `CFG-ENV-010`'s for one that reaches a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build), and `CFG-ENV-013`'s for any other in source, version control, a container build or a build artifact.
 
 **Source:** OWASP Secrets Management Cheat Sheet
 
 ### BE-DATA-004
 
-> Encryption MUST use AES-256 (or AES-128 minimum) with an authenticated mode (GCM, CCM) or ChaCha20-Poly1305. Custom cryptographic primitives MUST NOT be used. ECB mode MUST NOT be used for any payload longer than one block.
+> Encryption MUST use AES-256 (or AES-128 minimum) with an authenticated mode (GCM, CCM) or ChaCha20-Poly1305. Custom cryptographic primitives MUST NOT be used, and ECB mode MUST NOT be used. A non-AEAD construction other than ECB that legacy compatibility forces (decrypting existing data, interoperating with a peer that supports nothing else) MAY remain where the spec justifies the deviation.
 
-**Rationale:** Proven algorithms have undergone extensive analysis. Custom implementations contain vulnerabilities by default. Authenticated modes (AEAD) prevent tampering as well as preserving confidentiality. ECB reveals patterns in ciphertext (the canonical "ECB Penguin").
+**Verification:** Any spec or plan that introduces encryption MUST name the algorithm and mode. `/papur:analyze` flags custom or unnamed algorithms, and flags any commitment to ECB, unauthenticated CBC, or pre-AEAD constructions for new code. Legacy compatibility deviations MUST be explicitly justified in the spec.
 
-**Verification:** Any spec or plan that introduces encryption MUST name the algorithm and mode. Validate flags custom or unnamed algorithms, and flags any commitment to ECB, unauthenticated CBC, or pre-AEAD constructions for new code. Legacy compatibility deviations MUST be explicitly justified in the spec.
-
-**Source:** OWASP Cryptographic Storage Cheat Sheet, NIST SP 800-38D
+**Source:** OWASP Cryptographic Storage Cheat Sheet, NIST SP 800-38D, RFC 8439 (ChaCha20 and Poly1305)
 
 ### BE-DATA-005
 
 > Encryption keys and signing keys MUST be rotatable. The rotation procedure (cadence, mechanism, decryption of in-flight data, retirement of old keys) MUST be documented in `specs/system.md` or a dedicated spec. The system MUST support rotation without downtime.
 
-**Rationale:** Keys leak. Without a documented rotation procedure, the only response to suspected compromise is "rebuild the system" — which never happens, so the compromised key stays in use. Documented rotation is a precondition for survivable key compromise.
-
-**Verification:** Any spec or plan that introduces encryption-at-rest, JWT signing, HMAC signatures, or any other long-lived keys MUST describe (a) rotation cadence, (b) versioning/dual-key reads during transition, (c) retirement of old keys. Validate flags key-using specs that omit the rotation question.
+**Verification:** Any spec or plan that introduces encryption-at-rest, JWT signing, HMAC signatures, or any other long-lived keys MUST describe (a) rotation cadence, (b) versioning/dual-key reads during transition, (c) retirement of old keys. `/papur:analyze` flags key-using specs that omit the rotation question.
 
 **Source:** OWASP Cryptographic Storage Cheat Sheet
 
@@ -438,93 +398,91 @@ Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assi
 
 > Personally Identifiable Information (PII) MUST be minimized at collection, scoped to a documented purpose, and deletable on user request. Data retention periods MUST be defined for each PII field.
 
-**Rationale:** PII you don't collect is PII you don't have to protect, leak, or be subpoenaed for. Minimization is the strongest privacy control. Purpose limitation, deletion, and retention bounds are baseline GDPR/CCPA requirements.
+**Verification:** Any spec or plan that collects PII (names, emails, addresses, phone numbers, government IDs, biometrics, geolocation) MUST describe (a) the minimum data set required, (b) the documented purpose, (c) the deletion path, and (d) the retention period. `/papur:analyze` flags PII-collecting specs that omit any of these.
 
-**Verification:** Any spec or plan that collects PII (names, emails, addresses, phone numbers, government IDs, biometrics, geolocation) MUST describe (a) the minimum data set required, (b) the documented purpose for each field, (c) the deletion path, and (d) the retention period. Validate flags PII-collecting specs that omit any of these.
-
-**Source:** OWASP Cryptographic Storage Cheat Sheet, GDPR Article 5
+**Source:** GDPR Article 5(1)(b), (c), (e) (purpose limitation, data minimisation, storage limitation), GDPR Article 17 (right to erasure), CCPA (Cal. Civ. Code §1798.105, right to delete)
 
 ### BE-DATA-007
 
-> Application-to-database accounts MUST follow least privilege. Application accounts MUST NOT have DBA, superuser, or schema-modification privileges in production.
+> Application-to-database accounts MUST follow least privilege. Application accounts MUST NOT have DBA, superuser, or schema-modification privileges in production. Each environment MUST have its own application accounts, and schema migrations MUST run under an account the application does not use.
 
-**Rationale:** A compromised application with full database privileges enables schema corruption, data exfiltration, and privilege escalation beyond the application's intended scope. Least-privilege accounts contain the blast radius of an SQL injection or application compromise to operations the application legitimately needs.
+**Verification:** Any spec or plan covering database access, deployment configuration, or `system.md` MUST commit to (a) separate application accounts per environment, (b) the minimum privilege set the application requires (typically `SELECT`/`INSERT`/`UPDATE`/`DELETE` on its own schema, no `CREATE`/`DROP`/`ALTER`), and (c) a separate account for migrations with elevated privileges that the application itself does not use. `/papur:analyze` flags database access specs that omit the privilege question or that name a `root`/`admin`/`postgres` account for application use.
 
-**Verification:** Any spec or plan covering database access, deployment configuration, or `system.md` MUST commit to (a) separate application accounts per environment, (b) the minimum privilege set the application requires (typically `SELECT`/`INSERT`/`UPDATE`/`DELETE` on its own schema, no `CREATE`/`DROP`/`ALTER`), and (c) a separate account for migrations with elevated privileges that the application itself does not use. Validate flags database access specs that omit the privilege question or that name a `root`/`admin`/`postgres` account for application use.
-
-**Source:** CIS Database Benchmarks, OWASP SQL Injection Prevention Cheat Sheet
+**Source:** OWASP Database Security Cheat Sheet, OWASP SQL Injection Prevention Cheat Sheet
 
 ### BE-DATA-008
 
-> Secrets MUST NOT be embedded in container images, Dockerfiles, or container-build manifests. Secrets MUST be injected at runtime via environment variables sourced from a secrets manager, mounted secret volumes, or platform-native secret APIs.
+> Secrets a running container uses MUST be injected at runtime via environment variables sourced from a secrets manager, mounted secret volumes, or platform-native secret APIs.
 
-**Rationale:** Container images are stored in registries, cached in build systems, and inspectable by anyone with registry pull access. Embedded secrets are trivially extracted via `docker history` or layer inspection. This rule complements `BE-DATA-003` for the container-specific case.
+**Verification:** Any spec or plan that describes containerization, container deployment, or a running container that uses a secret MUST commit to runtime injection for each secret a running container uses. `/papur:analyze` flags specs and plans that describe a running container using a secret without naming how it is injected into it at runtime. **Not flagged:** a secret only a build step uses. A secret kept somewhere runtime injection should replace is that placement's defect: `configuration-cross.md` `CFG-ENV-001`'s for an in-application default value, `CFG-ENV-010`'s for one that reaches a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build), including through a build stage, and `CFG-ENV-013`'s for any other in source or version control (a committed deployment manifest or `.env` file included), written in a container-build manifest, passed to the container build, or placed into the image.
 
-**Verification:** Any spec or plan that describes containerization or container deployment MUST commit to runtime secret injection. Validate flags `Dockerfile` content (or equivalent build manifests) that includes `ENV SECRET=...`, `ARG SECRET=...` baked into layers, or `COPY` of secret files into the image.
-
-**Source:** OWASP Secrets Management Cheat Sheet, NIST SP 800-190 (Container Security)
+**Source:** OWASP Secrets Management Cheat Sheet, NIST SP 800-190 (Application Container Security Guide) §3.1.4, §4.1.4
 
 ### BE-DATA-009
 
 > All security-sensitive random values — session IDs, API tokens, password-reset tokens, CSRF tokens, OAuth `state` and `nonce`, encryption IVs, salt values, and any cryptographic key material — MUST be generated by a cryptographically secure pseudorandom generator (CSPRNG). Language-default non-CSPRNG generators (`Math.random`, `rand()`, Python `random` module, Java `java.util.Random`) MUST NOT be used for these values.
 
-**Rationale:** Non-CSPRNG generators are deterministic from a small seed and produce predictable sequences — an attacker who observes a few outputs can predict the next ones, defeating any security primitive built on the value. CSPRNGs (`crypto.randomBytes`, `secrets` module, `SecureRandom`, `getrandom(2)`, `BCryptGenRandom`) draw from the OS entropy pool and are not predictable.
+**Verification:** Any spec or plan that generates a security-sensitive random value MUST name the CSPRNG primitive. `/papur:analyze` flags specs that propose `Math.random`, `random.randint`, `Random()`, `rand()`, or any non-CSPRNG source for tokens, IDs, IVs, salts, or keys. **Not flagged:** a CSPRNG such as `crypto.randomBytes`, the `secrets` module, `SecureRandom`, `getrandom(2)`, or `BCryptGenRandom`.
 
-**Verification:** Any spec or plan that generates a security-sensitive random value MUST name the CSPRNG primitive. Validate flags specs that propose `Math.random`, `random.randint`, `Random()`, `rand()`, or any non-CSPRNG source for tokens, IDs, IVs, salts, or keys.
-
-**Source:** OWASP Cryptographic Storage Cheat Sheet, NIST SP 800-90A
+**Source:** OWASP Cryptographic Storage Cheat Sheet, NIST SP 800-90A Rev. 1
 
 ### BE-DATA-010
 
-> Backups containing sensitive data MUST be encrypted with keys distinct from the keys protecting the live data, and the backup keys MUST be stored separately from both the backup media and the production data plane. Restore procedures MUST be tested on a documented cadence and the test result recorded.
+> Backups containing sensitive data MUST be encrypted with keys distinct from the keys protecting the live data, and the backup keys MUST be stored separately from both the backup media and the production data plane — the hosts, services and accounts that hold or can read the live data. Restore procedures MUST be tested on a documented cadence and the test result recorded. A deployment that `specs/system.md` declares single-host MAY keep the key for a backup kept on that host on the host itself, outside the backup stream and outside the reach of the database's accounts; a backup sent off the host, and any key that also encrypts one, keeps the custody above.
 
-**Rationale:** Backups are a popular target — they contain everything sensitive, are often retained for years, and are frequently stored on systems with weaker controls than production. Reusing the production key gives one compromise both live and historical access; never testing the restore means an "encrypted backup" that turns out to be unrecoverable is discovered only during an incident.
+**Verification:** Any spec or plan that introduces backups, snapshots, or long-term data retention MUST commit to the Statement's distinct backup key, separate key custody (or, for an on-host backup of a deployment `specs/system.md` declares single-host, the on-host custody its MAY allows) and restore-test cadence. `/papur:analyze` flags backup specs that omit any of these, and flags specs that propose using the production encryption key directly for backup encryption.
 
-**Verification:** Any spec or plan that introduces backups, snapshots, or long-term data retention MUST commit to (a) encryption with a backup-specific key, (b) key custody separate from both the backup storage and the production data plane, and (c) a documented restore-test cadence. Validate flags backup specs that omit any of these, and flags specs that propose using the production encryption key directly for backup encryption.
-
-**Source:** NIST SP 800-209 (Storage Security), OWASP Cryptographic Storage Cheat Sheet
+**Source:** NIST SP 800-209 (Security Guidelines for Storage Infrastructure), OWASP Cryptographic Storage Cheat Sheet
 
 ### BE-DATA-011
 
-> Outbound TLS connections the application initiates (third-party APIs, internal services, databases, message brokers) MUST validate the server's certificate chain and hostname against a trusted CA set. Certificate or hostname verification MUST NOT be disabled in production — `verify=False`, `rejectUnauthorized: false`, `InsecureSkipVerify: true`, `curl -k`/`--insecure`, and equivalent trust-all handlers are forbidden. Certificate pinning or a private CA is acceptable when the trust anchor is documented; any non-production deviation MUST be explicitly justified and MUST NOT ship to production.
+> Outbound TLS connections the application initiates (third-party APIs, internal services, databases, message brokers) MUST validate the server's certificate chain and hostname against a trusted CA set. Certificate or hostname verification MUST NOT be disabled in production. Certificate pinning or a private CA is acceptable when the trust anchor is documented; any non-production deviation MUST be explicitly justified and MUST NOT ship to production. For a server the product does not control, a trust anchor the operator supplies at configuration time — that server's CA certificate or a pinned fingerprint of its certificate — MAY stand in for the trusted CA set.
 
-**Rationale:** Disabling certificate validation turns TLS into unauthenticated encryption — any on-path attacker can present a self-signed certificate and transparently man-in-the-middle the connection, defeating the confidentiality and integrity `BE-DATA-001` requires. The failure is invisible at runtime (the connection still "works"), so it survives to production unless forbidden outright. This rule is the client-side complement to `BE-DATA-001` (TLS on host-crossing traffic) and `BE-AUTHN-008` (TLS for credentials).
+**Verification:** Any spec or plan that introduces outbound TLS connections MUST commit to full certificate and hostname validation. `/papur:analyze` flags any commitment to `verify=False`, `rejectUnauthorized: false`, `InsecureSkipVerify`, `curl -k`/`--insecure`, or any other trust-all certificate or hostname handler on a production path, an operator setting that turns verification off included. **Not flagged:** validation of the certificate and hostname against a trusted CA set, a documented pin or private CA, or, for a server the product does not control, an operator-supplied trust anchor, by the library or by a custom verifier that replaces the library's own (Go's `VerifyPeerCertificate` or `VerifyConnection` under `InsecureSkipVerify`); a verifier that skips the hostname is flagged.
 
-**Verification:** Any spec or plan that introduces outbound TLS connections MUST commit to full certificate and hostname validation. Validate flags any commitment to `verify=False`, `rejectUnauthorized: false`, `InsecureSkipVerify`, `-k`/`--insecure`, or a custom trust-all certificate handler on a production path.
+**Source:** CWE-295 (Improper Certificate Validation), Go `crypto/tls` documentation (`InsecureSkipVerify`), Requests documentation — SSL Cert Verification
 
-**Source:** OWASP Transport Layer Security Cheat Sheet, OWASP Cryptographic Storage Cheat Sheet
+### BE-DATA-012
+
+> Every secret the application uses other than the encryption and signing keys `BE-DATA-005` governs (database credentials, third-party API keys, service tokens, OAuth client secrets) MUST be revocable and replaceable without a source-code change or an artifact rebuild, and the procedure for revoking and replacing a leaked secret MUST be documented. A credential for a throwaway local or test resource that grants no access to a production or shared system is not a secret under this rule, such as a `docker-compose.yml` `POSTGRES_PASSWORD: postgres` or a committed `.env.test` key for a local emulator.
+
+**Verification:** Any spec or plan that introduces a secret, or `specs/system.md` where secrets are inventoried, MUST name for each secret where it is revoked (the issuing system) and how a replacement reaches the running application (secret-manager update, re-injection by the orchestrator, restart). `/papur:analyze` flags secret-introducing specs that omit the revocation path or name a restart as the revocation, or whose replacement path requires editing source or rebuilding an image. A replacement path that needs a source edit or a rebuild only because the secret is itself embedded is the embedding rule's defect: `configuration-cross.md` `CFG-ENV-001`'s for an in-application default value, `CFG-ENV-010`'s for a secret that reaches a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build), and `CFG-ENV-013`'s for any other in source, version control, a container build or a build artifact. The revocation-path flags apply to every secret. This rule governs every secret but encryption and signing keys: an encryption or signing key with no rotation procedure is `BE-DATA-005`'s. **Not flagged:** a credential for a throwaway local or test resource that grants no access to a production or shared system, which is not a secret under this rule.
+
+**Source:** OWASP Secrets Management Cheat Sheet
+
+### BE-DATA-013
+
+> An outbound HTTP client that sends a credential in a request header — `Authorization`, a cookie, or a header of the application's own such as an API-key header — or in the request body, such as a client secret or a form-posted token, MUST NOT let a redirect carry that credential to a different origin (scheme, host and port). It MUST either refuse to follow redirects or follow only a redirect to the same origin, the credential reaching it by the client's own decision; a client library that never sends the header on a redirect to a different origin MAY be relied on for a header credential, not for a body credential.
+
+**Verification:** Any spec or plan that introduces an outbound HTTP client sending a credential in a request header or body, a redirect loop of its own included, MUST name the client's redirect policy for that credential: redirects refused, only same-origin redirects followed, or, for a header, reliance on a library that never sends the header on a redirect to a different origin. `/papur:analyze` flags such a client whose spec or plan names no redirect policy for that credential; that relies on a library without showing, citing its documentation or source, that the library never sends the header on a redirect to a different origin — Go's `net/http` client, for one, forwards a header of the application's own to any host and keeps `Authorization` and `Cookie` on a redirect to the same hostname or a subdomain whatever the scheme or port; that relies on a library for a body credential, which Go's `net/http` keeps on a 307 or 308 redirect whenever `Request.GetBody` is defined, as `NewRequest` defines it for common body types, and Python's `requests` keeps on every 307 or 308; or that follows a redirect to another origin by any other means, a redirect loop of its own, a hook that removes the header itself, or a same-host comparison that ignores scheme or port included. **Not flagged:** a header the spec or plan shows, citing the library's documentation or source, that its library never sends on a redirect to a different origin.
+
+**Source:** Go `net/http` documentation (`Client`: headers forwarded on redirect, `CheckRedirect`, `ErrUseLastResponse`; `Client.Do`: a 307 or 308 redirect preserving the method and body when `Request.GetBody` is defined) and source (`client.go`, `shouldCopyHeaderOnRedirect`); Python `requests` source (`sessions.py`, `SessionRedirectMixin.resolve_redirects`); RFC 6454 §4 (an origin is the triple of scheme, host and port)
 
 ## BE-API — API Security
 
 ### BE-API-001
 
-> All HTTP responses MUST include a documented set of security headers covering: HSTS, content-type options, frame protection, referrer policy, content security policy (for HTML responses), and cache control for sensitive responses.
+> All HTTP responses MUST include a documented set of security headers covering: HSTS, content-type options, frame protection, referrer policy, content security policy (for HTML responses), cache control for sensitive responses, and an explicit content type (with a charset on HTML). A CDN or other shared cache in front of the application MUST NOT be configured to store an authenticated or sensitive-data response, a setting that ignores the origin's `Cache-Control` included.
 
-**Rationale:** Each header converts the browser into a layered defense. HSTS prevents downgrade attacks; `X-Content-Type-Options` prevents MIME sniffing; frame-ancestors prevents clickjacking; `Referrer-Policy` controls Referer leakage; CSP defends against XSS and mixed content; `Cache-Control: no-store` keeps sensitive responses out of shared caches and the back-button cache. CSP `frame-ancestors` is the modern clickjacking defense and supersedes `X-Frame-Options`; `X-Frame-Options: DENY` is set in addition for browsers that do not implement CSP Level 2 (see `FE-CSP-003`).
-
-**Verification:** Any spec or plan that introduces an HTTP response (especially HTML) MUST commit to setting these headers, ideally at the framework or reverse-proxy layer for uniform coverage. Validate flags response specs that omit any of the headers above, and specifically flags HTML-serving specs without a CSP commitment. The minimum required headers and their values:
+**Verification:** Any spec or plan that introduces an HTTP response MUST commit to setting the headers below, and one that introduces an authenticated or sensitive-data response, makes a response authenticated or carry sensitive data, or describes a page whose response carries sensitive data, MUST commit to `Cache-Control: no-store` on it, and one that introduces a landing page the project serves for a URL-delivered single-use token, or such a token landing on one, whoever issued it (a password-reset, sign-in or email-verification link's, or an OAuth client's callback page), MUST commit to `Referrer-Policy: no-referrer` on that page; and one that configures a CDN, another shared cache or the origin's serving for authenticated or sensitive-data responses, those another spec made authenticated included, MUST commit to their not being stored in the shared cache and to the `Cache-Control: no-store` this rule requires of them. `/papur:analyze` flags a spec introducing a response that omits any of them, a spec introducing an authenticated or sensitive-data response, making a response authenticated or carry sensitive data, or describing a page whose response carries sensitive data, that omits `Cache-Control: no-store`, a spec introducing such a landing page or token that omits `Referrer-Policy: no-referrer` on the page, and a spec configuring a shared cache or the origin's serving that lets a shared cache store an authenticated or sensitive-data response, such as an edge TTL that ignores the origin's `Cache-Control` or a rule that caches every response, or that sets on one a `Cache-Control` without `no-store` (`public`, `s-maxage=600` or `private, max-age=604800`). **Not flagged:** a missing `X-Frame-Options`, which `BE-API-012` owns; and a missing `Permissions-Policy` or `Cross-Origin-Opener-Policy` on an HTML response, which this rule does not cover and `security-frontend.md`'s `FE-CSP-007` and `FE-CSP-009` do; and, where `security-frontend.md` is also loaded, a missing or deficient `Content-Security-Policy` on an HTML response, its `frame-ancestors` included, which its `FE-CSP-001`, `FE-CSP-002` and `FE-CSP-003` own; and, where `security-frontend.md` is also loaded, the `Referrer-Policy` of a page a URL-delivered single-use token lands on, which its `FE-STORAGE-003` owns. The minimum required headers and their values:
 
 | Header | Value | Applies to |
 | --- | --- | --- |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (floor); `preload` is opt-in after the operator confirms all subdomains can run HTTPS forever | All responses |
 | `X-Content-Type-Options` | `nosniff` | All responses |
 | `Content-Security-Policy` | Project-defined CSP including `frame-ancestors` (see `FE-CSP-002`/`FE-CSP-003`) | HTML responses |
-| `X-Frame-Options` | `DENY` (or `SAMEORIGIN`) as a fallback alongside the CSP directive | HTML responses |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` (or stricter) | All responses |
+| `Referrer-Policy` | `no-referrer` | A landing page the project serves for a URL-delivered single-use token |
 | `Cache-Control` | `no-store` | Authenticated and sensitive-data responses |
-| `Content-Type` | Explicit type with charset (e.g., `text/html; charset=UTF-8`) | All responses |
+| `Content-Type` | The response's actual media type, with a charset on HTML (e.g., `text/html; charset=UTF-8`) | All responses |
 
-The HSTS `preload` directive commits the domain — and, with `includeSubDomains`, every subdomain — to HTTPS for the lifetime of the browser preload list, which is effectively irreversible. Operators MUST confirm long-term HTTPS coverage of every subdomain before enabling `preload`.
-
-**Source:** OWASP HTTP Headers Cheat Sheet, MDN Web Docs, hstspreload.org
+**Source:** OWASP HTTP Headers Cheat Sheet, OWASP HTTP Strict Transport Security Cheat Sheet, OWASP Forgot Password Cheat Sheet (`no-referrer` on the reset page), W3C Content Security Policy Level 2 (`frame-ancestors`), W3C Referrer Policy (`strict-origin-when-cross-origin`), RFC 9111 §3 and §3.5, Cloudflare documentation — Cache Rules settings (Edge TTL), hstspreload.org (HSTS Preload List Submission)
 
 ### BE-API-002
 
 > The `Server`, `X-Powered-By`, and framework-specific version headers MUST be removed or set to non-informative values.
 
-**Rationale:** Technology fingerprinting enables targeted attacks against known vulnerabilities in specific framework versions. Suppression denies attackers a reconnaissance shortcut.
-
-**Verification:** Any spec or plan covering edge configuration or web-server configuration MUST commit to suppressing or genericizing these headers. Validate flags response-handling specs that explicitly include these headers or that omit the suppression question.
+**Verification:** Any spec or plan covering edge or web-server configuration MUST commit to suppressing or genericizing these headers. `/papur:analyze` flags response-handling specs that explicitly include these headers or that omit the suppression question.
 
 **Source:** OWASP HTTP Headers Cheat Sheet
 
@@ -532,123 +490,147 @@ The HSTS `preload` directive commits the domain — and, with `includeSubDomains
 
 > CORS policy MUST be explicit. Wildcard `Access-Control-Allow-Origin: *` MUST NOT be used for any endpoint that returns user data, and MUST NOT be combined with `Access-Control-Allow-Credentials: true`.
 
-**Rationale:** A `*` CORS allow on a credentialed or user-data endpoint exposes the user's data to any origin that can convince a browser to make the request. The CORS spec forbids `*` plus credentials; applications still misconfigure servers around it.
+**Verification:** Any spec or plan that describes a browser-facing API MUST name the allowed origins explicitly. `/papur:analyze` flags any commitment to `*` origin combined with cookies or auth headers, flags `*` origin on user-scoped endpoints, flags CORS commitments that omit the origin allowlist, and flags designs that echo the request's `Origin` back without checking it against the allowlist or that allowlist the `null` origin — both are a wildcard in effect.
 
-**Verification:** Any spec or plan that describes a browser-facing API MUST name the allowed origins explicitly. Validate flags any commitment to `*` origin combined with cookies or auth headers, flags `*` origin on user-scoped endpoints, and flags CORS commitments that omit the origin allowlist.
-
-**Source:** OWASP REST Security Cheat Sheet
+**Source:** OWASP REST Security Cheat Sheet, MDN Web Docs — Access-Control-Allow-Origin header
 
 ### BE-API-004
 
 > All public-facing endpoints MUST implement rate limiting. The throttle scope (per-IP, per-user, per-token) and the limits MUST be documented. Rate-limited responses MUST use `429 Too Many Requests` with a `Retry-After` header.
 
-**Rationale:** Unbounded request rates enable credential stuffing, brute-force authentication, scraping, and resource-exhaustion DoS. Rate limiting is the universal first-line mitigation.
+**Verification:** Any spec or plan that introduces a public endpoint MUST commit to a rate-limit policy — what is throttled, the threshold, and the response on exceedance. `/papur:analyze` flags public endpoints without this commitment, especially authentication, password reset, and search endpoints.
 
-**Verification:** Any spec or plan that introduces a public endpoint MUST commit to a rate-limit policy — what is throttled, the threshold, and the response on exceedance. Validate flags public endpoints without this commitment, especially authentication, password reset, and search endpoints.
-
-**Source:** OWASP REST Security Cheat Sheet
+**Source:** OWASP REST Security Cheat Sheet, RFC 6585 §4 (429 Too Many Requests)
 
 ### BE-API-005
 
-> The application MUST accept only documented HTTP methods per endpoint. Undocumented methods MUST return `405 Method Not Allowed` with an `Allow` header enumerating the methods that are supported on that resource (per RFC 9110 §15.5.6).
+> The application MUST accept only documented HTTP methods per endpoint. Undocumented methods MUST return `405 Method Not Allowed` with an `Allow` header enumerating the methods that are supported on that resource.
 
-**Rationale:** Unrestricted methods enable verb-tampering attacks that bypass authentication or authorization configured for specific verbs (e.g., `GET` is filtered but `POST` is not). The `Allow` header on a 405 is mandated by HTTP semantics — clients (and intermediaries) rely on it to negotiate the correct method.
-
-**Verification:** Any spec or plan that introduces HTTP endpoints MUST commit to method allowlisting and to emitting the `Allow` header on every 405 response. Validate flags endpoint specs that allow arbitrary methods, that omit the method-restriction question, or that describe 405 responses without the `Allow` header.
+**Verification:** Any spec or plan that introduces HTTP endpoints MUST commit to method allowlisting and to emitting the `Allow` header on every 405 response. `/papur:analyze` flags endpoint specs that allow arbitrary methods, that omit the method-restriction question, or that describe 405 responses without the `Allow` header.
 
 **Source:** OWASP REST Security Cheat Sheet, RFC 9110 §15.5.6
 
 ### BE-API-006
 
-> The application MUST validate the `Content-Type` header on incoming requests. Mismatched or unexpected content types MUST be rejected with `415 Unsupported Media Type`.
+> The application MUST validate the `Content-Type` header on incoming requests. Mismatched or unexpected content types MUST be rejected with `415 Unsupported Media Type`. An endpoint that accepts more than one unrelated format MUST harden the parsing of each.
 
-**Rationale:** Accepting unexpected content types enables injection attacks via format confusion (e.g., a JSON endpoint that also accepts XML may be vulnerable to XXE even when the JSON path is hardened).
-
-**Verification:** Any spec or plan that introduces request-accepting endpoints MUST commit to content-type validation. Validate flags endpoint specs that accept multiple unrelated formats without explicit per-format hardening.
+**Verification:** Any spec or plan that introduces request-accepting endpoints MUST commit to content-type validation. `/papur:analyze` flags endpoint specs that accept multiple unrelated formats without explicit per-format hardening. An unhardened XML parser is `BE-INPUT-009`'s, and any deserialization `BE-INPUT-008` flags (a format that can execute code as it parses, polymorphic typing driven by type names, or YAML without a safe-loading mode) is `BE-INPUT-008`'s.
 
 **Source:** OWASP REST Security Cheat Sheet
 
 ### BE-API-007
 
-> Management, administration, and monitoring interfaces for infrastructure services (databases, message brokers, caches, search engines, debug consoles) MUST NOT be reachable from public networks. Management ports MUST be bound to internal networks, VPN, or localhost only.
+> Database ports, and the management, administration, and monitoring interfaces of infrastructure services (databases, message brokers, caches, search engines, debug consoles), MUST NOT be reachable from public networks. Database ports and management ports MUST be bound to internal networks, VPN, or localhost only.
 
-**Rationale:** Management interfaces provide privileged access to data, configuration, and runtime control. Public exposure makes them targets for credential stuffing, exploit attacks, and direct compromise of the underlying service.
+**Verification:** Any spec or plan covering deployment, networking, or `system.md` MUST commit to keeping database ports and management interfaces off public networks (private subnet, security group, firewall rule). `/papur:analyze` flags deployment specs that bind a database's client port or a management port (e.g., RabbitMQ management UI on `15672`, Elasticsearch on `9200`, Redis on `6379`, database admin tools) to public interfaces, that allow public database access, or that omit the network-exposure question. **Not flagged:** a publicly reachable management or diagnostic endpoint the application itself serves, which `BE-API-014` owns.
 
-**Verification:** Any spec or plan covering deployment, networking, or `system.md` MUST commit to restricting management interface exposure. Validate flags deployment specs that bind management ports (e.g., RabbitMQ management UI on `15672`, Elasticsearch on `9200`, Redis on `6379`, database admin tools) to public interfaces or that omit the network-exposure question.
-
-**Source:** CIS Benchmarks, OWASP REST Security Cheat Sheet
+**Source:** OWASP REST Security Cheat Sheet (Management endpoints), OWASP Database Security Cheat Sheet, Redis documentation — Redis security
 
 ### BE-API-008
 
-> Database ports MUST NOT be reachable from public networks. Application-to-database connections MUST use authenticated, encrypted channels.
+> Connections to a database server, cache, message broker, search engine (Elasticsearch, OpenSearch) or coordination service (ZooKeeper, etcd), from the application or from another component of its deployment (a replication standby's connection to its primary, a connection pooler's own lookup connection), directly or through a connection pooler or proxy, MUST be authenticated on each leg, a connection from the local host included, and encrypted as `BE-DATA-001` requires. An authentication a pooler or proxy relays authenticates each leg it crosses.
 
-**Rationale:** Direct database access bypasses every application-level security control. Public exposure of database ports is a direct path to data theft. This rule pairs with `BE-DATA-007` (account privileges) — together they enforce both network and account-level least privilege.
+**Verification:** Any spec, plan or `specs/system.md` that describes a connection to a database server, cache, message broker, search engine or coordination service, from the application or from another component of its deployment, a replication standby's connection to its primary and a connection pooler's own lookup connection included, MUST name how the server verifies the connecting client's identity on it, a connection from the local host included. A connection through a connection pooler or proxy is judged on each leg, a leg being a connection between two processes, so a pool or connector inside the application's process opens none of its own. At each hop of a chain, a pooler or proxy that itself authenticates the application, or supplies the credential with which the database server authenticates the database user, stands in for the database server on the leg that reaches it and for the application on the leg it opens; a connection through one that relays the application's own authentication to the database server, whatever credential it presents for its own connection (a TCP load balancer, or the Cloud SQL Auth Proxy when the application logs in through it with a database user's password), is judged by the method the database server applies to the application through it. A connection to a cache, message broker, search engine or coordination service, and one another component of the deployment makes, is judged the same way, that server standing for the database server and the connecting component for the application. `/papur:analyze` flags specs, plans and `specs/system.md` that describe such a connection, a local one included, without naming how the server verifies the client's identity, or that name a method under which the server accepts the connection without verifying the client's identity (PostgreSQL's `trust` without `clientcert=verify-full`, a `replication` line in `pg_hba.conf` included, or a Redis server whose `default` user is `on` with `nopass`, as Redis ships it, for two). **Not flagged:** a database port reachable from a public network, which `BE-API-007` owns; a connection's encryption, that of a connection naming no TLS or of a plaintext loopback connection included, which `BE-DATA-001` owns; and the application's opening of an in-process database such as SQLite, or of a cache inside its own process, neither of which has a server process to authenticate the application. A connection that an in-process database or cache makes to another process, a database server it attaches or syncs with and a peer member of an embedded cache cluster included, and one the application makes to a server an in-process database starts are judged like any other.
 
-**Verification:** Any spec or plan covering deployment or `system.md` MUST commit to (a) database ports unreachable from public networks (private subnet, security group, firewall rule), and (b) TLS-encrypted application-to-database connections. Validate flags deployment specs that allow public database access or that describe database connections without naming TLS.
-
-**Source:** CIS Benchmarks, OWASP SQL Injection Prevention Cheat Sheet
+**Source:** OWASP Database Security Cheat Sheet, OWASP NoSQL Security Cheat Sheet, PostgreSQL documentation — Trust Authentication, Certificate Authentication and The pg_hba.conf File, Redis documentation — ACL, SQLite documentation — SQLite Is Serverless, PgBouncer documentation — Configuration, Google Cloud documentation — About the Cloud SQL Auth Proxy
 
 ### BE-API-009
 
 > Backend redirect endpoints (e.g., `/redirect?url=...`, post-login redirects, OAuth callbacks, share-link expansions, any user-controlled destination URL) MUST validate the destination against an allowlist of acceptable hosts or paths. Open redirects are forbidden.
 
-**Rationale:** Open redirects facilitate phishing (a legitimate-looking link on the application's domain that redirects to attacker.example), OAuth-flow manipulation, and credential-stealing landing pages. Allowlist validation contains the redirect to known-safe destinations.
+**Verification:** Any spec or plan that includes a redirect endpoint the Statement names or any other user-controlled destination URL MUST commit to validating the destination against the Statement's allowlist. `/papur:analyze` flags a redirect feature without the allowlist commitment. **Not flagged:** an OAuth or OIDC client's `redirect_uri`, its registration with any authorization server included, in a spec or plan that introduces the client, adds or changes its redirection endpoint, or changes the redirect URIs it registers or sends, which `security-cross.md` `SEC-AUTHN-002` (d) owns; a `redirect_uri` an authorization server the project serves or provides receives, its matching, an unregistered one it accepts in a pushed authorization request or a signed request object, its redirect to it and client-side code's navigation to it included, in a spec or plan that introduces or describes that server, which `security-cross.md` `SEC-AUTHN-004` owns; and, where `security-frontend.md` is also loaded, a redirect to a destination client-side code reads and navigates to, whatever its source (the URL, `document.referrer`, `window.name`, storage, a message, a fetched response, the project's own API's included, or page data or props the server renders), such as a single-page app navigating to a `?next=` value, which its `FE-AUTHN-001` owns; a redirect the server's own response performs, a `3xx` response's `Location`, a meta refresh or script into which the server writes the destination to perform the redirect, or a server action's redirect, stays this rule's, an authorization server's redirect to a `redirect_uri` aside.
 
-**Verification:** Any spec or plan that includes a redirect endpoint, OAuth callback, post-login next-URL, share link, or user-controlled destination URL MUST commit to validating the destination against an allowlist (host allowlist, path allowlist, signed URL parameter). Validate flags redirect features without this commitment.
-
-**Source:** OWASP Unvalidated Redirects and Forwards Cheat Sheet
+**Source:** OWASP Unvalidated Redirects and Forwards Cheat Sheet, RFC 9700 §2.1, §4.1.3
 
 ### BE-API-010
 
-> Inbound webhook endpoints (receiving callbacks from third-party services) MUST verify a cryptographic signature over the request before acting on the payload. Verification MUST cover (a) an HMAC or asymmetric signature using a per-sender secret/public key, (b) the full request body (not a derived hash the sender computed), (c) a timestamp or nonce with a bounded replay window (typically ≤5 minutes), and (d) constant-time comparison per `BE-AUTHN-009`. Outbound webhooks the application emits MUST sign requests the same way and document the verification contract for receivers.
+> Inbound webhook endpoints (receiving callbacks from third-party services) MUST verify a cryptographic signature over the request before acting on the payload. Verification MUST cover (a) an HMAC or asymmetric signature using a per-sender secret/public key, (b) the full request body (not a derived hash the sender computed), (c) a timestamp or nonce with a bounded replay window (typically ≤5 minutes), and (d) constant-time comparison per `security-cross.md` `SEC-AUTHN-001`. Outbound webhooks the application emits MUST sign requests the same way and document the verification contract for receivers.
 
-**Rationale:** A webhook endpoint that does not verify signatures is an unauthenticated state-changing API exposed to the internet — anyone who knows the URL can forge events. Replay-window enforcement prevents an attacker from re-sending a captured-but-valid request hours later. Documented signing on outbound webhooks lets receivers protect themselves symmetrically.
+**Verification:** Any spec or plan that introduces inbound or outbound webhooks MUST commit to the Statement's four properties (a)–(d) and name the algorithm. `/papur:analyze` flags webhook specs that omit signature verification, that verify only headers without the body, that lack a timestamp/nonce, or whose outbound receiver contract documents an ordinary string comparison or names no constant-time one. **Not flagged:** a signature an inbound webhook spec compares with an ordinary string comparison, or for which it names no constant-time comparison, which `security-cross.md` `SEC-AUTHN-001` owns, a comparison an outbound webhook's receiver contract documents staying this rule's (d); and an SSRF exposure in delivering outbound webhooks to subscriber-supplied URLs — a server-side fetch — which `BE-INPUT-007` and `BE-INPUT-016` own.
 
-**Verification:** Any spec or plan that introduces inbound or outbound webhooks MUST commit to all four verification properties (signature, body coverage, replay window, constant-time comparison) and MUST name the algorithm. Validate flags webhook specs that omit signature verification, that verify only headers without the body, that lack a timestamp/nonce, or that use ordinary string comparison.
-
-**Source:** Stripe / GitHub / Slack webhook signing patterns, OWASP REST Security Cheat Sheet
+**Source:** OWASP Webhook Security Cheat Sheet
 
 ### BE-API-011
 
-> State-changing requests authenticated by an ambient credential the browser attaches automatically (session cookie, HTTP Basic, TLS client certificate) MUST be validated server-side against a CSRF defense before the state change is applied: a synchronizer or double-submit token verified on the server, or a `SameSite` cookie combined with a server-side `Origin`/`Sec-Fetch-Site` check. Token comparison MUST be constant-time per `BE-AUTHN-009`. Requests that fail the check MUST be rejected with `403`. Endpoints authenticated solely by a non-ambient bearer token (e.g., `Authorization: Bearer`, not stored in a cookie) are exempt.
+> State-changing requests authenticated by an ambient credential the browser attaches automatically (session cookie, HTTP Basic, TLS client certificate) MUST be validated server-side against a CSRF defense before the state change is applied: a synchronizer token or a signed (session-bound HMAC) double-submit cookie token verified on the server; a required custom request header, under a CORS policy that does not admit that header from other origins; or `Sec-Fetch-Site` validation, under which a state-changing request that lacks the header is either rejected (failing closed) or checked against its `Origin` as the fallback. A design that falls back to a CSRF token instead complies through the token defense. The token the server compares MUST arrive in a request body field or a custom request header, never only in a cookie, and never in the URL. `SameSite` cookies and `Origin`/`Referer` checks MUST NOT be the sole defense. Token comparison MUST be constant-time per `security-cross.md` `SEC-AUTHN-001`. Requests that fail the check MUST be rejected with `403`. Endpoints authenticated solely by a non-ambient bearer token (e.g., `Authorization: Bearer`, not stored in a cookie) are exempt.
 
-**Rationale:** CSRF is exploitable only when the browser attaches a credential without the calling site's involvement, so the defense must be enforced on the server — the client cannot be trusted to send it. `FE-CSRF-001` specifies the token generation and submission strategy; this rule is its server-side enforcement half, which a backend-only service must implement even when it ships no frontend rule file. The bearer-token exemption reflects that a token the attacker's page cannot read is not auto-attached and so cannot be forged cross-site.
+**Verification:** Any spec or plan that introduces cookie-authenticated (or otherwise ambient-credential) state-changing endpoints MUST name the server-side CSRF check, where a token it compares arrives, and its rejection behavior, and one that describes a form or client code sending such an endpoint's token without introducing the endpoint MUST name where the token travels. `/papur:analyze` flags state-changing endpoints that rely on an ambient credential without a documented server-side token, custom-header, or `Sec-Fetch-Site` check, that name `SameSite` or `Origin`/`Referer` checks as the only defense, that propose an unsigned double-submit cookie, that carry the token the server compares only in a cookie, or anywhere in the URL, a form's `action` query included, or that validate `Sec-Fetch-Site` without stating what happens to a request that lacks it. A token comparison that is not constant-time is `security-cross.md` `SEC-AUTHN-001`'s, and a WebSocket endpoint that serves non-public data or accepts state-changing messages, its cross-site defense and a token in its opening-handshake URL included, is `BE-API-015`'s. This rule does not adopt the narrow deployments in which the OWASP CSRF Prevention Cheat Sheet lets `SameSite` stand alone. On the fallback path, a missing or `null` `Origin` is not evidence of a same-origin request; the fallback is a different check that completes, not a skipped one, so `BE-ERR-005`'s deny-on-failure does not rule it out. Where `security-frontend.md` is also loaded, its `FE-CSRF-001` names this rule as the owner of the defense, and a spec or plan that describes a form or client code sending the token and introduces no endpoint is its `FE-STORAGE-003`'s.
 
-**Verification:** Any spec or plan that introduces cookie-authenticated (or otherwise ambient-credential) state-changing endpoints MUST name the server-side CSRF check and its rejection behavior. Validate flags state-changing endpoints that rely on an ambient credential without a documented server-side token or origin validation, and flags token checks that are not constant-time.
+**Source:** OWASP Cross-Site Request Forgery Prevention Cheat Sheet, W3C Fetch Metadata Request Headers
 
-**Source:** OWASP Cross-Site Request Forgery Prevention Cheat Sheet
+### BE-API-012
+
+> HTML responses SHOULD also set `X-Frame-Options: DENY` (or `SAMEORIGIN` where same-origin framing is required) as a clickjacking fallback for browsers that do not honor the CSP `frame-ancestors` directive `BE-API-001` requires.
+
+**Verification:** Any spec or plan that describes serving HTML responses SHOULD commit to `X-Frame-Options: DENY` (or `SAMEORIGIN`) alongside the CSP `frame-ancestors` directive. `/papur:analyze` emits a warning when HTML-serving specs omit `X-Frame-Options`. `FE-CSP-008` states the same obligation in the frontend rule set. **Not flagged:** a redirect or a JSON API response.
+
+**Source:** OWASP HTTP Headers Cheat Sheet, OWASP Clickjacking Defense Cheat Sheet
+
+### BE-API-013
+
+> Passwords, session identifiers, access, refresh and ID tokens, and API keys MUST NOT be accepted in URL query parameters or path segments; the server MUST accept them only in request headers (e.g., `Authorization`, `Cookie`) or the request body (a WebSocket message included). Personally identifiable information (PII) MUST NOT be accepted in a URL query parameter. The server MUST NOT send a credential or PII to a client in a URL either, in a redirect's `Location`, a link it renders or a link it sends to a person in an email or another message, a credential in its query, path or fragment and PII in its query, outside an OAuth authorization response. Single-use, short-lived values that a protocol carries in the URL by design — OAuth authorization codes, password-reset tokens (`BE-AUTHN-018`), and email-verification tokens — MAY appear in URLs, in a query parameter or a path segment. A single-use value the project issues that a URL delivers MUST be invalidated on first use and expire within a bounded lifetime. A pre-signed object-storage URL MAY carry its authorization in the URL when it is scoped to one object and one method and expires within a lifetime the spec states. Neither carve-out reaches a WebSocket opening handshake, a single-use ticket included, as `BE-API-015` also requires of an endpoint serving non-public data or accepting state-changing messages. An OpenID Provider the project serves MAY accept `login_hint` and `id_token_hint` in the query of a GET request to its authorization endpoint, and `id_token_hint` and `logout_hint` in one to its logout endpoint, and a relying party the project serves MAY accept `login_hint` in one to its login-initiation endpoint, as OpenID Connect has them accept these by GET, and a key its issuer designs to be public MAY appear in a URL a third party's browser API, embed or image takes it in, as that API requires. The hint MAYs reach only the receiver: a party that sends such a hint can POST it. The `iss` and `sid` an OpenID Provider adds to the query of a relying party's `frontchannel_logout_uri` when it renders that URI as an `iframe`'s source MAY appear there, for the provider that renders the request and the relying party that receives it, as OpenID Connect Front-Channel Logout 1.0 delivers them by no other means, and the opaque identifier an RFC 8058 one-click `List-Unsubscribe` URI carries MAY appear in that URI, which encodes the recipient and the list with no other carrier.
+
+**Verification:** Any spec or plan that introduces an endpoint the project serves that accepts a credential, an authenticated, sign-in, sign-up or token endpoint included, or an API-key scheme or token transport for one, or that describes how a client sends a credential to one or how one accepts it, MUST name where the credential is carried; one that issues a single-use value a URL delivers outside a WebSocket opening handshake (a sign-in link, an email-verification token, a ticket, or an authorization code the project's own authorization server issues) MUST state that the value is invalidated on first use and its lifetime; and one that issues a pre-signed object-storage URL MUST state its lifetime and the object and method it is scoped to. A spec or plan that describes an endpoint the project serves taking PII in its URL's query, or the server sending a password, session identifier, access, refresh or ID token or API key, or PII in a query, to a client in a URL, or to a person in a link in an email or another message, is judged by the flags below whether or not the endpoint accepts a credential. `/papur:analyze` flags specs that accept, or whose client code sends to an endpoint the project serves, passwords, session IDs, access, refresh or ID tokens or API keys as query parameters (`?token=` carrying one of them, `?api_key=`, `?access_token=`, `?id_token=`) or path segments, or PII as a query parameter (`?email=`), other than the values either carve-out allows outside a WebSocket opening handshake, the opaque identifier of an RFC 8058 one-click `List-Unsubscribe` URI and, in the spec of an OpenID Provider the project serves, the `login_hint` and `id_token_hint` it accepts in a GET request to its authorization endpoint and the `id_token_hint` and `logout_hint` it accepts in one to its logout endpoint, and, in the spec of a relying party the project serves, the `login_hint` it accepts in one to its login-initiation endpoint and the `iss` and `sid` it receives at its `frontchannel_logout_uri`, client code that sends any such hint in a URL staying flagged, flags a spec in which the server sends a password, session identifier, access, refresh or ID token or API key, or PII in a query, to a client in a URL, or to a person in a link in an email or another message, a redirect to `https://app.example.com/#access_token=…` for one, outside an OAuth authorization response, the values either carve-out allows, the opaque identifier of an RFC 8058 one-click `List-Unsubscribe` URI, a key its issuer designs to be public in a URL a third party's browser API, embed or image takes it in, the spec naming that API, and the `iss` and `sid` an OpenID Provider the project serves renders into a relying party's `frontchannel_logout_uri`, flags a single-use value the project issues that a URL delivers outside such a handshake, whose spec omits its first-use invalidation or expiry, and flags a pre-signed URL the project issues whose spec states no expiry or whose scope reaches more than one object or method. **Not flagged:** the first-use invalidation and expiry of a single-use value, and the expiry and scope of a pre-signed URL, that a third party issues, such as an authorization code a client receives from another party's authorization server; a password, session identifier, token or API key, or PII in a query, that the server's own code sends in the URL of a request to an endpoint the project does not serve, such as another party's API called with its key in the query, which `security-cross.md` `SEC-DATA-001` owns; a sensitive configuration value, alone or in a configuration object, that the project's application returns to a client in a URL a response carries, a redirect's `Location` or a link in a page it renders included, or sends to a person in a link in an email or another message, which `configuration-cross.md` `CFG-ENV-006` owns, a pre-signed URL the project issues staying this rule's; a password, session identifier, token or API key in the opening-handshake URL of a WebSocket endpoint that serves non-public data or accepts state-changing messages, which `BE-API-015` owns; the carrier of such an endpoint's credential, in a spec or plan that introduces one, which `BE-API-015` (b) owns, a spec or plan that describes client code connecting to one and introduces none staying this rule's; a password-reset or account-recovery token's expiry and single-use invalidation, which `BE-AUTHN-018` owns; an access token an OAuth authorization response returns in a URL, which `security-cross.md` `SEC-AUTHN-003` owns; and, where `security-frontend.md` is also loaded, a password, session identifier, access, refresh or ID token, API key or PII the server sends to a client, or to a person in a link, in a URL's fragment or in the URL of an endpoint the project does not serve, which its `FE-STORAGE-003` owns, and a value a URL delivers as a single-use value outside a WebSocket opening handshake whose spec omits its first-use invalidation or expiry, and a pre-signed URL's expiry and scope, which its `FE-STORAGE-003` owns.
+
+**Source:** OWASP REST Security Cheat Sheet (Sensitive information in HTTP requests), CWE-598 (Use of HTTP Request With Sensitive Query String), OWASP WebSocket Security Cheat Sheet, OWASP Forgot Password Cheat Sheet, RFC 6749 §4.1.2, RFC 9700 §4.3.2, Amazon S3 User Guide (Download and upload objects with presigned URLs), OpenID Connect Core 1.0 §3.1.2.1 and §4, OpenID Connect RP-Initiated Logout 1.0 §2, OpenID Connect Front-Channel Logout 1.0 §2, RFC 8058 §3.1, Google Maps Platform, "Load the Maps JavaScript API", "The Maps Embed API overview" and "Google Maps Platform security guidance"
+
+### BE-API-014
+
+> The application's own management and diagnostic endpoints — metrics, profiling and debug handlers (e.g., Go's `/debug/pprof/`), heap or thread dumps, configuration and environment dumps, and framework management endpoints such as Spring Boot Actuator's — MUST NOT be reachable from public networks unless every request to them is authenticated; serving them on a separate port or host that only internal networks can reach satisfies this. A health endpoint that returns only an up/down status MAY be public.
+
+**Verification:** Any spec or plan that introduces metrics, profiling, debug, or framework management endpoints, or `specs/system.md` where the deployment's listeners are described, MUST state where each such endpoint is served (port, host, network) and how access to it is restricted. `/papur:analyze` flags specs that serve these endpoints on the public listener without authentication, that enable a framework's management endpoints over HTTP without naming their access control, or that register debug or profiling handlers, without authentication, on the router that serves public traffic. **Not flagged:** an infrastructure service's management interface reachable from a public network, which `BE-API-007` owns.
+
+**Source:** OWASP REST Security Cheat Sheet (Management endpoints), Spring Boot reference documentation — Endpoints (Actuator), Go `net/http/pprof` package documentation
+
+### BE-API-015
+
+> A WebSocket endpoint that serves non-public data or accepts state-changing messages MUST (a) check the `Origin` header of each opening handshake against an explicit allowlist of trusted origins, matched exactly, and refuse with `403 Forbidden` a handshake whose `Origin` is not on the list, or is absent unless the connection is authenticated by a credential the browser does not attach automatically; (b) authenticate the connection before it sends protected data or acts on a message — during the handshake, or with a token in the first message, accepting nothing else until that token validates — and close the connection when authentication fails; and (c) treat every message as a request subject to the schema validation of `BE-INPUT-001`, the size bounds of `BE-INPUT-006`, and the per-request, object-level authorization of `BE-AUTHZ-003` and `BE-AUTHZ-005`. Such an endpoint MUST NOT accept a password, session identifier, token or API key carried in the handshake URL, not even a single-use ticket `BE-API-013`'s first carve-out would allow elsewhere.
+
+**Verification:** Any spec or plan that introduces a WebSocket endpoint that serves non-public data or accepts state-changing messages MUST name (a) the handshake's `Origin` allowlist, (b) where the connection's credential is carried and how and when the connection is authenticated, and (c) the validation, size limit, and authorization applied to each message type, and any spec or plan that describes client code connecting to such an endpoint the project serves MUST NOT have that code carry a credential in the handshake URL. `/papur:analyze` flags such an endpoint that accepts any `Origin` (e.g., a Gorilla WebSocket `CheckOrigin` that returns `true`), that matches origins by wildcard or substring or allowlists `null`, that accepts a handshake with no `Origin` while the connection is authenticated by a credential the browser attaches automatically, such as a cookie, that sends protected data or acts on messages before authentication completes, or that authorizes only when the connection opens rather than per message, and flags any spec or plan under which such an endpoint the project serves accepts, or whose client code sends, a password, session identifier, token or API key, a single-use ticket or a CSRF token included, in its handshake URL. A CORS policy does not satisfy (a): WebSocket connections are not restricted by the same-origin policy or CORS (CWE-1385), so `BE-API-003`'s CORS allowlist does not protect them. `BE-API-011`'s custom-header defense cannot be applied to a WebSocket. The `Origin` check does not replace authentication: a non-browser client can send any `Origin` it likes, so a spec that authenticates the connection by its `Origin` fails (b). **Not flagged:** a connection without TLS (`ws` rather than `wss`), which `BE-DATA-001` owns.
+
+**Source:** OWASP WebSocket Security Cheat Sheet, RFC 6455 §4.1, §4.2.1, §10.1, §10.2, §10.5 (The WebSocket Protocol), CWE-1385 (Missing Origin Validation in WebSockets), PortSwigger Web Security Academy — Cross-site WebSocket hijacking, MDN Web Docs — `WebSocket()` constructor
 
 ## BE-ERR — Error Handling
 
 ### BE-ERR-001
 
-> Production error responses MUST NOT include stack traces, file paths, database error messages, framework versions, or any internal implementation detail. Verbose errors MUST appear only in non-production environments or behind authentication.
+> Production error responses MUST NOT include stack traces, file paths, database error messages, framework versions, or any internal implementation detail. Verbose errors MUST appear only in non-production environments.
 
-**Rationale:** Internal details in production responses are a reconnaissance gift — attackers learn the framework, language version, file layout, and sometimes credentials in connection strings.
-
-**Verification:** Any spec or plan that describes error handling MUST commit to environment-conditional error formatting — verbose in dev, sanitized in production. Validate flags error-handling specs that do not distinguish environments or that emit internal-detail responses in production paths.
+**Verification:** Any spec or plan that describes error handling MUST commit to environment-conditional error formatting. `/papur:analyze` flags error-handling specs that do not distinguish environments or that emit internal-detail responses in production paths. **Not flagged:** a sensitive configuration value, alone or in a configuration object, which `configuration-cross.md` `CFG-ENV-006` owns in any error response; the internal detail around it, such as the rest of a connection string or a database driver's message, stays this rule's.
 
 **Source:** OWASP Error Handling Cheat Sheet
 
 ### BE-ERR-002
 
-> Error responses MUST use a consistent, structured format with a stable error code, a human-readable message, and a request correlation ID. The format SHOULD follow RFC 9457 (Problem Details for HTTP APIs, which obsoletes RFC 7807).
+> Error responses MUST use a consistent, structured format with a stable error code, a human-readable message, and a request correlation ID.
 
-**Rationale:** Stable error codes let clients react programmatically (retry, surface a localized message, branch on specific failures). Correlation IDs let support debug a user's report against the server's logs without exposing internals to the user. The envelope's contract-quality requirements — codes documented in the published schema, stable across versions, and never parsed from the human-readable message — are specified in `api-backend.md` §BE-ERRENV; this rule covers the security angle (structured shape, correlation ID).
+**Verification:** Any spec or plan that introduces an API that returns errors to callers outside its process, an HTTP API or one that is not, such as a gRPC or JSON-RPC service, over a socket or stdio included, or that describes error responses MUST commit to the structured format with code + message + correlation ID; a library's in-process API, a message consumer, and a command-line tool's output and exit status return no error response to a caller, while a request-response protocol a process serves over its stdio does. `/papur:analyze` flags such a spec that states no error format, and error-response specs whose format carries no stable error code or no human-readable message, that do not surface the request correlation ID to the client, that change an existing code's value or meaning, a renamed one included, whatever the version, or, for an API that is not an HTTP API, that give the API's operations differing error shapes. **Not flagged:** an error that an RPC protocol carried over HTTP returns in a success response instead of through its protocol's error channel, which `api-backend.md`'s `BE-STATUS-001` owns; for an HTTP API, an endpoint spec that names no envelope, and an error response outside the project's single documented envelope, a naked string or a bare exception name included, which `api-backend.md`'s `BE-ERRENV-001` owns, and an error code missing from that envelope, missing from the published schema, changed in value or meaning (a renamed one included, whatever the version), or parsed from the human-readable message, which `api-backend.md`'s `BE-ERRENV-002` owns; and a failed long-running operation that a success response from its status monitor reports outside the project envelope, which `api-backend.md`'s `BE-LRO-001` owns.
 
-**Verification:** Any spec or plan that describes error responses MUST commit to the structured format with code + message + correlation ID. Validate flags error-response specs that emit only a string message or a raw exception name.
-
-**Source:** OWASP Error Handling Cheat Sheet, RFC 9457
+**Source:** OWASP Error Handling Cheat Sheet
 
 ### BE-ERR-003
 
 > The application MUST implement a global error handler that catches unhandled exceptions and returns a structured `5xx` response. Unhandled exceptions MUST NOT propagate to the client.
 
-**Rationale:** Without a global handler, uncaught exceptions produce default framework responses that include stack traces, source paths, and environment details — a direct path to reconnaissance.
-
-**Verification:** Any spec or plan covering the request-handling pipeline or `system.md` MUST commit to a global exception handler that produces a structured response. Validate flags pipeline specs that omit this commitment.
+**Verification:** Any spec or plan covering the request-handling pipeline or `system.md` MUST commit to a global exception handler that produces a structured response. `/papur:analyze` flags pipeline specs that omit this commitment. **Not flagged:** for an HTTP API, the shape of a global handler's error response, one outside the project's documented envelope or a naked string included, which `api-backend.md` `BE-ERRENV-001` owns; and, for an API that is not an HTTP API, the shape of a global handler's error response, which `BE-ERR-002` owns. The handler's existence and an unhandled exception that reaches the client stay this rule's.
 
 **Source:** OWASP Error Handling Cheat Sheet
+
+### BE-ERR-004
+
+> The structured error format of an API that is not an HTTP API SHOULD be the error model of the most specific protocol it adopts whose published specification defines one — for example the JSON-RPC 2.0 error object, or the gRPC status (a status code with an optional message) — and SHOULD otherwise, a protocol the project defines included, be a structured format used uniformly and documented in `specs/errors.md` or in the spec that defines that protocol.
+
+**Verification:** Any spec or plan that describes the error responses of an API that is not an HTTP API SHOULD commit to the error model of the most specific protocol it adopts whose published specification defines one or, where none does, name the documented format the API uses. `/papur:analyze` emits a warning when such a spec defines a structured format that is neither that error model nor documented in `specs/errors.md` or in the spec that defines the project's protocol, or documents a format that replaces an error model the adopted protocol's specification defines. **Not flagged:** an error that an RPC protocol carried over HTTP returns in a success response instead of through its protocol's error channel, which `api-backend.md`'s `BE-STATUS-001` owns; error shapes that differ between the API's operations, and a format carrying no stable error code or no human-readable message, which `BE-ERR-002` owns; and an HTTP API's error format, which `api-backend.md`'s `BE-ERRENV-003` owns for the project's envelope, `BE-ERRENV-001` for a project-specific envelope defined outside `specs/errors.md` and for an endpoint's own undocumented shape, and `BE-LRO-001` for a failed long-running operation that a success response from its status monitor reports outside the project envelope.
+
+**Source:** JSON-RPC 2.0 Specification §5.1 (Error object), gRPC documentation — Error handling (Standard error model)
+
+### BE-ERR-005
+
+> When a security control cannot complete its check — an authorization service times out or errors, a signature or token validation throws, a revocation or introspection lookup is unavailable — the request MUST be denied. Error handling around a security decision MUST NOT default to allowing the request or skipping the check.
+
+**Verification:** Any spec or plan that introduces an authorization check, token or signature validation, or a call to an external authorization, identity, or revocation service MUST state the outcome when that check errors or times out. `/papur:analyze` flags security-decision specs that omit the error outcome, or that describe allowing the request or skipping the check when the control is unavailable. Where `reliability-backend.md`'s `BE-BREAKER-001` lets a call guarded by a circuit breaker fall back while the breaker is open, the fallback for an authentication or authorization decision is denial.
+
+**Source:** OWASP Top 10:2025 (A10 — Mishandling of Exceptional Conditions), CWE-636 (Not Failing Securely)
 
 ## BE-LOG — Logging and Audit
 
@@ -656,9 +638,7 @@ The HSTS `preload` directive commits the domain — and, with `includeSubDomains
 
 > The following events MUST be logged: authentication successes and failures, authorization failures, input validation failures, privilege changes (role/permission modifications), session lifecycle events, and sensitive-data access for auditable resources.
 
-**Rationale:** Security logs are the primary source for detecting attacks, investigating incidents, and meeting compliance requirements. Coverage of these events is the baseline for any meaningful incident response.
-
-**Verification:** Any spec or plan that introduces authentication, authorization, validation, or privilege management MUST commit to logging the named events. Validate flags specs that omit the logging question for any of these surfaces.
+**Verification:** Any spec or plan that introduces authentication, authorization, validation, or privilege management MUST commit to logging the named events. `/papur:analyze` flags specs that omit the logging question for any of these surfaces.
 
 **Source:** OWASP Logging Cheat Sheet
 
@@ -666,19 +646,15 @@ The HSTS `preload` directive commits the domain — and, with `includeSubDomains
 
 > Logs MUST NOT contain passwords, full authentication tokens, session IDs, encryption keys, one-time codes (OTP, TOTP, SMS codes), recovery codes, security-question answers, raw PII, full payment card numbers, or other sensitive field values. If a sensitive field must be referenced, log only the field name (or a redacted/masked form), not its value.
 
-**Rationale:** Logs propagate through aggregation systems, archival storage, on-call dashboards, and developer machines. Anything in a log is widely visible and difficult to redact retroactively. Sensitive data in logs is an exfiltration path waiting to happen.
-
-**Verification:** Any spec or plan that introduces logging MUST commit to redaction or exclusion of sensitive fields. Validate flags logging specs that include request/response bodies in raw form, or that mention "log everything" without redaction commitments.
+**Verification:** Any spec or plan that introduces logging MUST commit to redaction or exclusion of sensitive fields. `/papur:analyze` flags logging specs that include request/response bodies in raw form, or that mention "log everything" without redaction commitments. **Not flagged:** a sensitive configuration value, alone or in a configuration object, which `configuration-cross.md` `CFG-ENV-006` owns.
 
 **Source:** OWASP Logging Cheat Sheet
 
 ### BE-LOG-003
 
-> Log storage MUST be separate from application data storage. Log access MUST be restricted and monitored. The system SHOULD implement tamper detection on log integrity (write-once storage, cryptographic chaining, or external archival).
+> Log storage MUST be separate from application data storage. Log access MUST be restricted and monitored.
 
-**Rationale:** If an attacker gains application database access, logs stored in the same database can be modified to cover tracks. Separation plus access control plus tamper detection escalate the attacker effort required to hide.
-
-**Verification:** Any spec or plan covering logging infrastructure or `system.md` MUST commit to log storage separation and access control. Tamper detection is a `SHOULD` flagged as advisory when missing.
+**Verification:** Any spec or plan covering logging infrastructure or `system.md` MUST commit to each obligation in the Statement. `/papur:analyze` flags logging-infrastructure specs that store logs with application data, leave log access unrestricted, or omit how access to the logs is monitored.
 
 **Source:** OWASP Logging Cheat Sheet
 
@@ -686,9 +662,7 @@ The HSTS `preload` directive commits the domain — and, with `includeSubDomains
 
 > All changes to roles, permissions, user-role assignments, and service-account permissions MUST be recorded in an audit trail with actor, action, target entity, timestamp, and request correlation ID.
 
-**Rationale:** Authorization changes are the highest-impact security events — a single bad role grant can hand over the system. Audit trails enable incident response and compliance reporting (SOC 2, ISO 27001, HIPAA).
-
-**Verification:** Any spec or plan that introduces role management, permission grants, or admin invitations MUST commit to audit-log entries with the five required fields. Validate flags admin-management specs without this commitment.
+**Verification:** Any spec or plan that introduces role management, permission grants, or admin invitations MUST commit to audit-log entries with the five required fields. `/papur:analyze` flags admin-management specs without this commitment.
 
 **Source:** OWASP Logging Cheat Sheet
 
@@ -696,70 +670,80 @@ The HSTS `preload` directive commits the domain — and, with `includeSubDomains
 
 > All log timestamps MUST be emitted in UTC and formatted as RFC 3339 (`2025-11-30T14:23:01.123Z`) with at least millisecond precision. Local-time, epoch-without-timezone, and locale-dependent date formats MUST NOT be used.
 
-**Rationale:** Incident response across distributed systems requires merging logs from many hosts on a single timeline. Local-time timestamps without a zone offset force investigators to guess the host's TZ (often wrong during DST transitions); epoch values without unit suffixes are routinely misread as seconds vs. milliseconds. A single timezone (UTC) and a single format (RFC 3339) eliminate both classes of error.
-
-**Verification:** Any spec or plan that introduces logging MUST commit to UTC + RFC 3339 timestamp formatting. Validate flags logging specs that name local-time formats, epoch-only timestamps without unit clarity, or locale-dependent formats (e.g., `MM/DD/YYYY`).
+**Verification:** Any spec or plan that introduces logging MUST commit to UTC + RFC 3339 timestamp formatting. `/papur:analyze` flags logging specs that name local-time formats, epoch-only timestamps without unit clarity, or locale-dependent formats (e.g., `MM/DD/YYYY`).
 
 **Source:** RFC 3339, OWASP Logging Cheat Sheet
 
 ### BE-LOG-006
 
-> Every request entering the system MUST carry (or be assigned) a correlation ID that propagates through every log line, downstream service call, queue message, and audit-trail entry generated as a result of that request. The correlation ID MUST be present in error responses returned to clients so users can quote it back to support without exposing internal details.
+> Every request entering the system MUST carry (or be assigned) a correlation ID that propagates through every log line, downstream service call, queue message, and audit-trail entry generated as a result of that request. The correlation ID MUST be present in error responses returned to clients.
 
-**Rationale:** Without a correlation ID, tracing a single user-visible failure through a distributed system requires guessing which of thousands of concurrent log lines belong together. Standard primitives are W3C `traceparent`, `X-Request-ID`, or an OpenTelemetry trace ID; the specific choice matters less than that every component on the request path emits it.
+**Verification:** Any spec or plan that introduces request handling, inter-service calls, queue producers/consumers, or background-job dispatch MUST commit to correlation-ID generation at the edge, propagation across hops, and inclusion in every log line. `/papur:analyze` flags request-handling specs that omit correlation-ID propagation. **Not flagged:** an error response that does not surface the correlation ID to the client, which `BE-ERR-002` owns; and the choice of carrier — such as the W3C Trace Context `traceparent` header, an opaque `X-Request-ID` header, or the trace ID itself — provided every component on the request path emits it.
 
-**Verification:** Any spec or plan that introduces request handling, inter-service calls, queue producers/consumers, or background-job dispatch MUST commit to correlation-ID generation at the edge, propagation across hops, and inclusion in every log line. Validate flags request-handling specs that omit correlation-ID propagation, and flags error-response specs (per `BE-ERR-002`) that do not surface the correlation ID to the client.
+**Source:** W3C Trace Context, OWASP Logging Cheat Sheet, OpenTelemetry documentation — Context propagation
 
-**Source:** W3C Trace Context, OWASP Logging Cheat Sheet, OpenTelemetry
+### BE-LOG-007
+
+> The system SHOULD implement tamper detection on log integrity (write-once storage, cryptographic chaining, or external archival).
+
+**Verification:** Any spec or plan covering logging infrastructure or `system.md` SHOULD commit to a tamper-detection mechanism for logs. `/papur:analyze` emits a warning when a logging-infrastructure spec names none.
+
+**Source:** OWASP Logging Cheat Sheet
+
+### BE-LOG-008
+
+> Trace span attributes and events, metric labels, error-reporting payloads, propagated trace context (W3C `tracestate` and OpenTelemetry baggage entries), product-analytics event payloads and user properties, and session-replay recordings MUST NOT carry the values `BE-LOG-002` bars from logs. A value needed for correlation MUST be redacted, truncated, or replaced by an opaque internal identifier before it is recorded or propagated.
+
+**Verification:** Any spec or plan that introduces tracing, metrics, error reporting, baggage, product analytics or session replay MUST commit to excluding or redacting sensitive values from every carrier the Statement names, at the instrumentation or in the collection pipeline (e.g., an attribute allowlist or a redaction processor). `/papur:analyze` flags telemetry specs that record request or response bodies, full request headers, or PII such as email addresses as attributes or labels without a redaction commitment, flags specs that place tokens or PII in baggage or `tracestate`, and flags specs that send them in a product-analytics event or user property or record sessions without masking the input fields and page text that hold them. **Not flagged:** a sensitive configuration value, alone or in a configuration object, anywhere but in propagated trace context, which `configuration-cross.md` `CFG-ENV-006` owns; any other sensitive value in a log line, which `BE-LOG-002` owns; and a high-cardinality metric label carrying no sensitive value, which `observability-backend.md`'s `BE-METRIC-003` owns.
+
+**Source:** OpenTelemetry documentation — Handling sensitive data, OpenTelemetry semantic conventions (URL and HTTP attributes), OpenTelemetry documentation — Baggage, W3C Trace Context §6.2, §7.1, OWASP Logging Cheat Sheet, Google Analytics Help — Best practices to avoid sending Personally Identifiable Information (PII)
 
 ## BE-DEPS — Dependency Management
 
 ### BE-DEPS-001
 
-> Project dependencies MUST be scanned for known vulnerabilities on every CI run. Dependencies with known critical or high-severity vulnerabilities MUST be updated, replaced, or have a documented exception. Scanning SHOULD be automated in CI/CD.
+> Project dependencies MUST be scanned for known vulnerabilities before every release and on a recurring schedule between releases. Dependencies with known critical or high-severity vulnerabilities MUST be updated, replaced, or have a documented exception.
 
-**Rationale:** Vulnerable dependencies are the most common path to compromise in modern web stacks. Continuous scanning catches CVEs as they're disclosed; a documented action policy ensures findings are addressed rather than ignored.
+**Verification:** Any spec or plan covering dependency management, deployment, or `system.md` MUST name the vulnerability scanner (Snyk, Dependabot, Trivy, `pip-audit`, `npm audit`, OWASP Dependency-Check, etc.), when it runs (before release and on what schedule), AND the policy on findings (block the release, file an issue, alert on-call). `/papur:analyze` flags dependency specs that omit any of the three. **Not flagged:** how the scan runs — a CI job, a scheduled job, a dependency bot — which is the project's choice; no scan on each dependency change, which `BE-DEPS-007` owns; and, where `security-frontend.md` is also loaded, the scanning of the frontend's dependencies, which its `FE-DEPS-001` owns.
 
-**Verification:** Any spec or plan covering CI, deployment, or `system.md` MUST name the vulnerability scanner (Snyk, Dependabot, Trivy, `pip-audit`, `npm audit`, OWASP Dependency-Check, etc.) AND the policy on findings (fail the build, file an issue, alert on-call). Validate flags CI/dependency specs that omit either.
-
-**Source:** OWASP Dependency-Check, OWASP Top 10 (A06:2021 — Vulnerable and Outdated Components)
+**Source:** OWASP Vulnerable Dependency Management Cheat Sheet, OWASP Dependency-Check, OWASP Top 10:2025 (A03 — Software Supply Chain Failures), US Executive Order 14028 §4(e)(iv)
 
 ### BE-DEPS-002
 
-> Production dependencies MUST be pinned to specific versions (or version + integrity hash) in the lockfile or manifest used for production builds. Floating versions (`latest`, `^`, `~`, range constraints) MUST NOT determine what ships to production.
+> Production dependencies MUST be pinned to specific versions (or version + integrity hash) in the lockfile or manifest used for production builds. Floating versions (`latest`, `^`, `~`, range constraints) MUST NOT determine what ships to production. A pinned version MUST change only through a documented upgrade process.
 
-**Rationale:** Floating versions admit supply-chain attacks via a compromised release of a dependency, and make production debugging guesswork (the same `package.json` resolves to different versions on different days). Pinned versions plus an explicit upgrade process keep deployments deterministic and auditable.
+**Verification:** Any spec or plan covering build artifacts or deployment, or `system.md`, MUST commit to the Statement's pinning and to a documented upgrade process. `/papur:analyze` flags deployment specs that allow floating dependencies in production or that omit the lockfile question. **Not flagged:** a build input outside the package manifest and its lockfile, a container base image (`FROM node:22`) included, and a package a build step's command runs by a mutable reference, such as `npx tool@latest`, which `security-cross.md` `SEC-DEPS-001` owns; and, where `security-frontend.md` is also loaded, a frontend production build's dependencies, their pinning, upgrade process and install command, which its `FE-DEPS-004` owns.
 
-**Verification:** Any spec or plan covering build artifacts or deployment MUST commit to (a) pinned versions in lockfiles or pinned-version manifests for production builds, and (b) a documented upgrade process. Validate flags deployment specs that allow floating dependencies in production or that omit the lockfile question.
-
-**Source:** OWASP A06:2021, npm/pnpm/yarn lockfile documentation, supply-chain attack research
+**Source:** OWASP Top 10:2025 (A03 — Software Supply Chain Failures), npm documentation — package-lock.json, OpenSSF Scorecard (Pinned-Dependencies check)
 
 ### BE-DEPS-003
 
 > Every production build artifact MUST be accompanied by a machine-readable Software Bill of Materials (SBOM) in CycloneDX or SPDX format. The SBOM MUST be generated during the build (not after) and retained for the lifetime of the artifact.
 
-**Rationale:** SBOMs let security teams answer "are we affected by the new CVE in libfoo 2.3.1?" in seconds rather than days. They are increasingly compliance-mandated — US Executive Order 14028 requires SBOMs for federal software, and the EU Cyber Resilience Act extends the requirement to most commercial products. Generating during the build (e.g., via `syft`, `cyclonedx-cli`, native package-manager output) captures the actual resolved dependency graph, not an approximation.
+**Verification:** Any spec or plan covering build pipelines, release artifacts, or `system.md` MUST name the SBOM tool and format and commit to per-build generation and retention. `/papur:analyze` flags build/release specs that omit SBOM generation or that describe one-off SBOM exports separate from the build.
 
-**Verification:** Any spec or plan covering build pipelines, release artifacts, or `system.md` MUST name the SBOM tool and format and commit to per-build generation and retention. Validate flags build/release specs that omit SBOM generation or that describe one-off SBOM exports separate from the build.
-
-**Source:** US Executive Order 14028, NIST SP 800-161r1, CycloneDX / SPDX specifications
+**Source:** US Executive Order 14028 §4(e)(vii), Regulation (EU) 2024/2847 (Cyber Resilience Act) Annex I Part II point (1), OWASP Dependency Graph & SBOM Best Practices Cheat Sheet, CycloneDX / SPDX specifications
 
 ### BE-DEPS-004
 
-> Dependencies pulled from public registries MUST be verified against a publisher signature or attested provenance before installation. Acceptable verification mechanisms include npm package provenance (sigstore-backed), PyPI sigstore signatures, Go module checksums via the public sum database, Maven Central GPG signatures, or registry-signed attestations. Unsigned packages from public registries MUST be either replaced, vendored, or accompanied by a documented exception with a remediation plan.
+> Dependencies pulled from public registries MUST be verified against a publisher signature or attested provenance — or, for Go modules, against the public checksum database, a transparency log of module hashes — as part of installation, before they are built into or shipped with an artifact. Acceptable verification mechanisms include npm package provenance (sigstore-backed) and registry signatures, both checked with `npm audit signatures`, PyPI digital attestations (PEP 740, sigstore-backed) checked by a verifier the install step runs, such as the `pypi-attestations` tool, Go module checksums verified against `sum.golang.org`, Maven Central GPG signatures, or registry-signed attestations. Unsigned packages from public registries MUST be either replaced, vendored, or accompanied by a documented exception with a remediation plan. A project whose ecosystem's standard installer provides no signature or provenance verification (pip, for one) MAY, in place of the verification step, document that gap — naming the installer and the verification it lacks — and install with the integrity checking the ecosystem does offer, which for pip is hash-checking mode (`--require-hashes`) against the hashes `BE-DEPS-005` commits to the repository.
 
-**Rationale:** Lockfiles pin a version but not the bytes that came from the registry — a registry compromise, account takeover, or malicious release can publish a poisoned version under the same tag. Signed attestations bind the artifact to the publisher's verified identity, raising the bar from "compromise the registry" to "compromise the publisher's signing key."
+**Verification:** Any spec or plan covering dependency management, build pipelines, or `system.md` MUST commit to the Statement's verification step in install, or to its documented installer gap with hash-checked installs. A lockfile integrity hash, which `BE-DEPS-005` (b) requires, is not such a verification step except under the Statement's documented installer gap. `/papur:analyze` flags dependency specs that pull from public registries without naming a verification mechanism or a documented installer gap, flags a claimed gap with no hash-checked install (`pip --require-hashes`), and flags a gap claimed for an ecosystem whose standard installer does verify (the npm CLI ships `npm audit signatures`; the `go` command checks `sum.golang.org` by default).
 
-**Verification:** Any spec or plan covering dependency management, build pipelines, or `system.md` MUST commit to a signature/provenance verification step in install. Validate flags dependency specs that pull from public registries without naming a verification mechanism.
-
-**Source:** SLSA framework, sigstore, npm package provenance documentation
+**Source:** npm documentation — Generating provenance statements and `npm audit` (Audit Signatures), PEP 740 (Index support for digital attestations), PyPI documentation — Attestations: Security Model and Considerations and Consuming attestations, pip documentation — Secure installs (Hash-checking mode) and Changelog, Go Modules Reference (checksum database), Maven Central publishing requirements (Sign Files with GPG/PGP)
 
 ### BE-DEPS-005
 
-> Builds MUST be configured to prevent dependency-confusion and typosquatting attacks. Specifically, (a) when private packages share a namespace with public registries, the resolver MUST be scoped to the private registry for that namespace (npm `.npmrc` scope mapping, pip index priority, Maven repository ordering); (b) lockfiles MUST record the resolved registry URL per dependency; (c) new dependency additions MUST be reviewed against a known-typo list for the project's hot dependencies (e.g., `colorss` vs `colors`, `request-promse` vs `request-promise`).
+> Builds MUST be configured to prevent dependency-confusion and typosquatting attacks. Specifically, (a) when private packages share a namespace with public registries, the resolver MUST be configured so a private package name resolves only from the private registry (npm scope-to-registry mapping in `.npmrc`; for pip, a single `--index-url` that serves the private packages and proxies the public index, never `--extra-index-url` for private names, or a resolver that pins a package to one index, such as uv's `tool.uv.sources`; Maven repository ordering); (b) where the package manager supports it, builds MUST install with integrity verification against hashes committed to the repository (npm `package-lock.json` `integrity`, pip `--require-hashes`, Go `go.sum`, Gradle `verification-metadata.xml`); (c) new dependency additions MUST be reviewed against a known-typo list for the project's hot dependencies, and the plan MUST name where a new dependency's name is checked (an allowlist, a lockfile-diff review step, or a tool).
 
-**Rationale:** Dependency confusion (Birsan, 2021) tricks the resolver into pulling a malicious public package that shadows a private one with the same name — observed against major tech companies and now a routine supply-chain attack class. Typosquatting (a package named one keystroke off from a popular one) targets developers' muscle memory at `npm install` time. Scoped resolvers and lockfile registry pinning close the confusion vector; review at addition time closes the typo vector.
+**Verification:** Any spec or plan covering dependency management or build configuration MUST commit to the Statement's (a) when private packages exist, (b), and (c). `/papur:analyze` flags dependency-management specs that omit (a) where private packages exist, omit (b) where the package manager supports it, or name no place for (c)'s check, and flags pip configurations that reach private packages through `--extra-index-url`. **Not flagged:** a tool a build step installs outside the package lockfile, such as `pip install ziglang==0.17.0` in a CI step, whose checksum `security-cross.md` `SEC-DEPS-001` owns.
 
-**Verification:** Any spec or plan covering dependency management or build configuration MUST commit to (a) private-namespace scoping when private packages exist, (b) registry-URL recording in lockfiles, and (c) a review step on new dependency additions. Validate flags dependency-management specs that omit any of these when the project uses private packages or has a high dependency-churn rate.
+**Source:** Alex Birsan, "Dependency Confusion" (Medium, February 2021); pip documentation — `pip install` (Finding Packages; `--extra-index-url`); npm documentation — scope; uv documentation — Package indexes; Maven guide — Setting up Multiple Repositories (Repository Order); Gradle User Manual — Verifying Dependencies; OWASP Software Supply Chain Security Cheat Sheet
 
-**Source:** Alex Birsan, "Dependency Confusion" (2021); npm/pip/Maven repository documentation; OWASP Supply Chain Security guidance
+### BE-DEPS-007
+
+> The vulnerability scan of `BE-DEPS-001` SHOULD also run automatically on every change that alters the dependency set — the manifest or the lockfile.
+
+**Verification:** Any spec or plan covering dependency management or CI configuration SHOULD commit to an automated scan on dependency changes. `/papur:analyze` emits a warning when such a spec omits it. **Not flagged:** where the scan runs — CI, a pre-commit hook, a dependency bot — which is the project's choice; and, where `security-frontend.md` is also loaded, a scan on changes to the frontend dependency set, which its `FE-DEPS-006` owns.
+
+**Source:** OWASP Dependency-Check, OWASP Top 10:2025 (A03 — Software Supply Chain Failures)

@@ -1,13 +1,14 @@
 ---
 spec: 001-file-format
-reviewed-at: 2026-06-30T00:33:17Z
-reviewed-against: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
 diff-base: 35361debe81a1c38f29bc2fe33bdf97690b65b3c
+captured-issues: 1
+skipped-passes: []
+last-run: 2026-06-30T00:33:17Z
+reviewed-against: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
 must-violations: 0
 should-violations: 0
 low-confidence: 0
-captured-issues: 1
-skipped-passes: []
+blocking: false
 ---
 
 # Review — 001-file-format

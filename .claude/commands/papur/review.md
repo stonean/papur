@@ -1,14 +1,16 @@
 ---
 description: Audit code against rules — security, reuse, quality, efficiency, simplicity. Writes review.md; blocks done on MUST violations.
-argument-hint: "[--all] [--fix] [--security|--simplicity|--quality] [--since=<ref>] [--waive <rule-id> --reason <text>] [feature]"
+argument-hint: "[--all] [--fix] [--security|--simplicity|--quality] [--since=<ref>] [--waive <rule-id> --reason <text>] [--defer <rule-id> [--target <path> [--task <n>]] [--work-item <id>] [--reason <text>]] [feature]"
 ---
 
 # /papur:review
 
 Run a comprehensive code review against the targeted feature's implementation,
-covering reuse, quality, security, efficiency, and simplicity. Produces a
-`review.md` artifact alongside the spec. **Blocks the spec from reaching `done`
-when MUST violations are present.**
+covering reuse, quality, security, efficiency, and simplicity, and judges
+every acceptance criterion against the code, wherever that code lies, ticking
+or unticking each to match. Produces a `review.md` artifact alongside the spec.
+**Blocks the spec from reaching `done` when MUST violations are present, or a
+criterion is judged not met.**
 
 `/papur:review` audits **code against rules**. It is complementary to `/papur:analyze`,
 which audits **artifacts against each other**. Both should pass before a spec
@@ -16,27 +18,28 @@ advances to `done`.
 
 ## Purpose
 
-Quality gate before `done`: audit the feature's implementation against the project's rule files across five dimensions (security, reuse, quality, efficiency, simplicity), record the findings in `specs/NNN/review.md`, and set the spec's `review.blocking` frontmatter so `/papur:implement`, `/papur:analyze`, and the CI hook can hold the spec out of `done` while MUST violations stand. Waivers (with recorded justification) are the sanctioned escape.
+Quality gate before `done`: audit the feature's implementation against the project's rule files across five dimensions (security, reuse, quality, efficiency, simplicity) and judge every acceptance criterion (the criteria step, step 7's sub-steps), record the findings in `specs/NNN/review.md` — each observation with its disposition — and set `blocking` in that file's own frontmatter record so `/papur:implement`, `/papur:analyze`, and the CI hook can hold the spec out of `done` while MUST violations stand. Waivers (with recorded justification) and deferrals that release a violation (**§Deferrals** in `.ductus/reference/review.md`) are the sanctioned exits.
 
 ## Context
 
-Use the session target from `.ductus/session.toml`. If `$ARGUMENTS` carries a feature identifier, use it to override the session target — resolve that override through `resolve-feature` (exact directory name, feature number, or unique partial slug; `ambiguous` and `not-found` are domain outcomes to surface). With `--all` the target is every spec at `in-progress` or `done` and a feature identifier is redundant; report it rather than silently ignoring it. If no session target is set and no feature argument is provided, stop and tell the user to run `/papur:target` first.
+Use the session target: invoke `resolve-session` and display any notices and unreadable session files it returns. If `$ARGUMENTS` carries a feature identifier, use it to override the session target, resolved through `resolve-feature` (`ambiguous` and `not-found` are domain outcomes to surface). With `--all` the target is every spec at `in-progress` or `done` and a feature identifier is redundant; report it rather than silently ignoring it. If no session target is set and no feature argument is provided, stop and tell the user to run `/papur:target` first.
 
 ### Parsing `$ARGUMENTS`
 
-Parse `$ARGUMENTS` for flags in any position, then treat the remaining text as the optional feature identifier. Every flag is per-invocation and none is persisted to the session file — what to review is an execution-time decision, not session state. [Flags](#flags) below is the authoritative table of what each one _does_; this step is how each is _recognized_:
+Parse `$ARGUMENTS` for flags in any position, then treat the remaining text as the optional feature identifier. No flag is persisted to the session file. [Flags](#flags) below is the authoritative table of what each one _does_; this step is how each is _recognized_:
 
 - **`--all`**, **`--fix`**, **`--security`**, **`--simplicity`**, **`--quality`** — bare toggles, no value.
-- **`--since=<ref>`** — takes its value in `--since=<ref>` form; pass it to `compute-review-scope` as `since` (step 1). A bare `--since` with no value is an operator error: report it and stop. Do not fall back to the default diff base — a silent fallback reviews a different window than the one asked for, and reports it under a heading that claims otherwise.
+- **`--since=<ref>`** — takes its value in `--since=<ref>` form; pass it to `compute-review-scope` as `since` (step 1). A bare `--since` with no value is an operator error: report it and stop. Do not fall back to the default diff base, which reviews a different window than the one asked for.
 - **`--waive <rule-id> --reason "<text>"`** — a pair; each is an operator error without the other. Repeatable to waive more than one finding in a single invocation.
+- **`--defer <rule-id>`** — with `--target <path>` (plus `--task <n>` when the target is a `tasks.md`), `--work-item <id>`, or both, and an optional `--reason "<text>"`. Each `--target`, `--task`, `--work-item` and `--reason` belongs to the `--waive` or `--defer` before it. A `--defer` naming no work, a `--task` without a `tasks.md` target, a `--waive` carrying a `--target`, `--task` or `--work-item` (a waiver names no future work), and one rule both waived and deferred in one invocation are operator errors. Repeatable.
 
-Report an unrecognized `--flag` and stop. Never absorb it into the feature identifier: treating `--sinse=HEAD~5` as a feature name resolves to `not-found` at best, and at worst to a real feature whose review then silently covers the wrong scope.
+Report an unrecognized `--flag` and stop. Never absorb it into the feature identifier, where it can resolve to a real feature whose review then covers the wrong scope.
 
 ## Scope Boundaries
 
-- Reads the target spec, its `plan.md` (for Affected Files), the in-scope source files, the selected rule files, `AGENTS.md`, and `.ductus/config.toml`; diffs `specs/inbox.md` over the review window. Do NOT review files outside the resolved scope, and do NOT introduce review criteria from outside the project's rule files and `AGENTS.md`.
-- Writes exactly three artifacts: `specs/NNN/review.md`, the target spec's frontmatter `review:` block, and — when the run recorded any observations — one `specs/inbox.md` bullet per observation (all three via `write-review`); with `--waive`, appends a waiver entry; with `--fix`, applies auto-fixable findings to the working tree. No other files are modified — status transitions belong to `/papur:implement`.
-- Reference: §runtime-host-integration, §brownfield-inbox, §text-first-artifacts, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
+- Reads the target spec, its `plan.md` (for Affected Files), the in-scope source files, the code each acceptance criterion's claim names wherever it lies (the criteria step), the selected rule files' rules as step 2's `discover-rule-files` result gives them, `AGENTS.md`, `.ductus/config.toml`, and the `decisions:` list in its own `review.md`. The fix-and-route step (step 10) additionally reads what a disposition needs: a candidate covering spec's `spec.md` and `tasks.md` for the **§Groom decision tree** in `.ductus/reference/groom.md`, as `/papur:groom` does. Do NOT review files outside the resolved scope beyond what the criteria step reads to judge a criterion, and do NOT introduce review criteria from outside the project's rule files and `AGENTS.md`.
+- Writes `specs/NNN/review.md` — the whole record, in that file's own frontmatter (via `write-review`). `spec.md` is written only by step 7.3's `mark-criterion` calls, one acceptance-criterion checkbox per verdict. With `--waive`, appends a waiver entry; with `--defer`, records a deferral under `decisions:`, including, once confirmed, a `done → in-progress` reopen of a `done` spec a violation is deferred to; with `--fix`, applies auto-fixable findings to the working tree; and step 10 writes each observation's disposition — a chore fix by the rule, or, only after `gate-confirm` returns a confirmed decision, a deferral of a broken contract to the spec's own task or the home the **§Groom decision tree** in `.ductus/reference/groom.md` chooses, including a `done → in-progress` reopen of the spec deferred to. The fix-round loop (steps 10 and 12) writes its round files under `.ductus/review-rounds/{feature}/`, `.ductus/review-rounds/.gitignore`, and its snapshots as git objects no ref points at. Past the read size, steps 1, 2, 8, 9, 11 and 12's primitives, `dashboard` under `--all`, and `read-section` write lists files under `.ductus/results/`. No other files are modified, and nothing is written to `specs/inbox.md` — the reviewed spec's own status transitions belong to `/papur:implement`.
+- Reference: §runtime-host-integration, §bug-handling, §brownfield-inbox (Finding dispositions), §text-first-artifacts, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
 
 ## Inputs
 
@@ -44,41 +47,44 @@ Report an unrecognized `--flag` and stop. Never absorb it into the feature ident
   status `in-progress` or `done` when invoked with `--all`.
 - **Rules** — every file under the project's rule-file directory
   (`framework/rules/` in ductus's own repo, `specs/rules/` in adopter
-  projects) selected by the suffix-based discovery in step 2
-  (`discover-rule-files`); their content is the authoritative review
-  criteria. RFC 2119 language is authoritative:
+  projects) selected in step 2 (`discover-rule-files`); their content is the
+  authoritative review criteria. RFC 2119 language is authoritative:
   **MUST/MUST NOT** are blocking violations, **SHOULD/SHOULD NOT** are
   advisory.
-- **Scope** — files referenced by the target's `plan.md` under `Affected Files`,
-  unioned with any files modified since the spec advanced to `in-progress`.
-  `specs/inbox.md` is also read (diffed against `diff-base`) to
-  surface issues captured during the work window — see step 1 (`compute-review-scope`).
-- **Config** — three `.ductus/config.toml` keys influence this command:
-  - `[review] tech-stack-verified` (boolean, default `false`): when
-    `true`, the tech-stack alignment check (see step 1) is
-    skipped on every run until the operator clears the key. Set
-    automatically (with operator confirmation) on the first successful
-    alignment check.
-  - `[[review.disabled-rule-files]]` (array-of-tables, default empty):
-    each entry has a required `file` field (basename of a file in the
-    rule-file directory — `framework/rules/` here, `specs/rules/` in
-    adopter projects — e.g., `"accessibility-frontend.md"`) and a
-    required `reason` field (free-text justification; trimmed length
-    ≥ 16 Unicode codepoints). Files listed here are excluded from
-    rule-file selection regardless of stack detection. Consulted in
-    step 2 (`discover-rule-files`). Reason is mandatory — it is the
-    audit trail for the override.
-  - `[rules] surfaces` (array of strings, default unset): the project's
-    rule surfaces, members in `{"backend", "frontend"}` (full-stack lists
-    both; `*-cross.md` files are unconditional and not members). When set,
-    it is the source of truth for surface selection in step 2
-    (`discover-rule-files`) and replaces stack detection; when unset, step 2
-    falls back to the detected stack (and with no detected surfaces supplied,
-    the primitive loads **all** recognized surfaces). The **empty list**
-    (`[]`) is valid and means cross-only (not the same as unset); an
-    unrecognized member (including `"cross"`) or a non-list value fails fast
-    in step 2. Collected and persisted
-    by `/ductus` (`ductus.md`, **Collect Project Inputs**).
+- **Scope** — the spec's own change since its window's start, committed or not:
+  `compute-review-scope`'s description states the rule, and what it leaves out
+  is named in the record — see step 1.
+- **Config** — five `.ductus/config.toml` keys influence this command:
+  - `[review] tech-stack-verified` (boolean, default `false`): when `true`,
+    step 1's tech-stack alignment check is skipped until the operator clears
+    the key. Set, with operator confirmation, on the first successful check. A present
+    value that is not a boolean halts step 1 before any pass, naming the key,
+    the file and the value, and is never read as `false`.
+  - `[[review.disabled-rule-files]]` (array-of-tables, default empty): each
+    entry has a required `file` (a basename in the rule-file directory, e.g.,
+    `"accessibility-frontend.md"`) and a required `reason` (free text, the
+    override's audit trail; trimmed length ≥ 16 Unicode codepoints), and is
+    excluded from step 2's selection regardless of stack detection. A
+    malformed entry fails fast in step 2.
+  - `[rules] surfaces` (array of strings, default unset): the project's rule
+    surfaces, members in `{"backend", "frontend"}` (`*-cross.md` files are
+    unconditional and not members). When set, it replaces stack detection in
+    step 2; when unset, step 2 falls back to the detected stack (and with no
+    detected surfaces supplied, the primitive loads **all** recognized
+    surfaces). The **empty list** (`[]`) is valid and means cross-only, not
+    the same as unset; an unrecognized member (including `"cross"`) or a
+    non-list value fails fast in step 2. Collected and persisted by `/ductus`
+    (`ductus.md`, **Collect Project Inputs**).
+  - `[review] re-reads-off` (string, default unset): switches step 12's
+    fix-round loop off; the value is the reason, at least 16 characters
+    once trimmed. Each round that needed a re-read is then recorded as not
+    re-read and waived with it, and each run prints it. An empty value
+    counts as unset. A malformed value halts the run at step 10, before any
+    fix, naming the setting and the file.
+  - `[artifacts] read-size-bytes` (integer, default 50,000): the size past
+    which a step's result moves its lists to the file `lists-file` names, as
+    each primitive's description states. A malformed value halts the call
+    that reads it.
 
 ## Flags
 
@@ -89,9 +95,10 @@ Report an unrecognized `--flag` and stop. Never absorb it into the feature ident
 | `--security` | Run only the security pass |
 | `--simplicity` | Run only the reuse / quality / efficiency / simplicity passes |
 | `--quality` | Run only the correctness / bug-detection pass |
-| `--fix` | Apply auto-fixable findings (see [Auto-fix scope](#auto-fix-scope) below) |
-| `--since=<ref>` | Override the diff base (default: the parent of the commit at which the spec advanced to `in-progress`, so work committed with the transition is inside the window) |
-| `--waive <rule-id> --reason "<text>"` | Record a waiver for a MUST violation (see [Waivers](#waivers)) |
+| `--fix` | Apply auto-fixable findings (see **§Auto-fix scope** in `.ductus/reference/review.md`) |
+| `--since=<ref>` | Override where the window starts; the scope rule still applies (default: the later of the spec's last reopen and its last finished review, or `HEAD` while the reopen is uncommitted) |
+| `--waive <rule-id> --reason "<text>"` | Record a waiver for a MUST or SHOULD violation, anchored at each site its rule fires (see **§Waivers** in `.ductus/reference/review.md`) |
+| `--defer <rule-id>` `--target <path>` `--task <n>` `--work-item <id>` | Defer a MUST or SHOULD violation, at each site its rule fires, to the work that will address it (see **§Deferrals** in `.ductus/reference/review.md`) |
 
 ## Pipeline position
 
@@ -103,648 +110,41 @@ can advance to `done`. The recommended sequence is:
 ```
 
 `/papur:implement` MUST NOT mark a spec `done` while the target's `review.md`
-records `must-violations: > 0`. See [Blocking semantics](#blocking-semantics).
+records `must-violations: > 0`. See **§Blocking semantics** in `.ductus/reference/review.md`.
 
 ## Instructions
 
-> **For agent runtimes**: the Invoke steps below call the MCP tools of the ductus runtime; the host-integration contract — bare↔prefixed tool names, lazy ToolSearch schema fetch, the no-shell-utilities rule, and the two-paths guarantee — lives once in the constitution, §runtime-host-integration. Before the server is registered — the window between acquisition and the restart that loads it — walk the same prose using the host file-reading tools (Read, Edit, Write).
+> **For agent runtimes**: the Invoke steps below call the ductus runtime's MCP tools; without the server, stop and say to restart or re-run `/ductus` (§runtime-host-integration).
+>
+> **Claude Code:** load this command's `ductus` tools in one `ToolSearch` call, and send the command's first `ductus` call in that same message, since a tool can be called beside the search that loads it: `select:mcp__ductus__brief-re-read,mcp__ductus__check-prescriptions,mcp__ductus__compute-review-scope,mcp__ductus__discover-rule-files,mcp__ductus__gate-confirm,mcp__ductus__mark-criterion,mcp__ductus__process-decisions,mcp__ductus__process-waivers,mcp__ductus__read-re-read,mcp__ductus__read-section,mcp__ductus__set-status,mcp__ductus__start-fix-rounds,mcp__ductus__write-review`
 
-Run once per targeted feature (every in-progress or done spec under `--all`, otherwise the current `/papur:target`), in order. Resolve a `[feature]` argument through `resolve-feature` (exact name / number / unique partial slug), and enumerate the `--all` set from `dashboard`'s per-spec status inventory (`specs[].status ∈ {in-progress, done}`) rather than a directory scan. The detailed walk — rule-selection notices, waiver semantics, the report skeleton, and the pass definitions — lives under the Markdown-only reference section below.
+**Where a named section lives.** This command's reference is `.ductus/reference/review.md`. A section named here, or cited elsewhere as part of this command, that has no heading in this file is there. When a step points at one, invoke `read-section` with that path and every section the step names, in one call, rather than reading the whole file.
 
-1. Invoke `compute-review-scope` to resolve the diff base (the **parent** of the commit the spec advanced to in-progress at, so work committed together with an `/papur:amend` back-edge flip is inside the window rather than excluded from it; or a `--since` override, which is used verbatim), the review file scope (the **union** of the plan's Affected Files and the files modified since the diff base — both sets, because either alone can omit what the review exists to look at), and the inbox additions captured in that window. When the scope is empty, jump straight to the write-review step (step 9) — it emits the nothing-to-review-yet, non-blocking report. Otherwise confirm tech-stack alignment first (host judgment, not a primitive): read the active config file; when its `[review] tech-stack-verified` flag is true, skip the check; else compare the AGENTS.md Tech Stack section against the code in scope, halting with the tech-stack-misalignment message on a mismatch, and — on success — confirm before persisting the flag (the same confirm-before-write gate the other pipeline steps use; see the tech-stack alignment step in the markdown-only reference) and write `[review] tech-stack-verified = true` to the **active config file** (the newest existing of `.ductus/config.toml`, `.govern/config.toml`, or the legacy root `.govern.toml`, else `.ductus/config.toml`; specs 042 and 049 — a write outside the `/ductus` migrations never creates a partial `.ductus/config.toml` alongside a lingering older file). Only the flag read is deterministic — the alignment judgment stays with the host.
-2. Invoke `discover-rule-files` to select this run's rule files — suffix classification, the `[rules] surfaces` selection, and the disabled-rule-files filter — and emit the ordered notice lines it returns verbatim.
-3. <!-- llm:performReview --> Run the **security** pass over the in-scope files against the loaded security rules, returning one finding per violation (rule id, severity, file, line range, confidence, explanation).
+Run once per targeted feature, in order. Resolve a `[feature]` argument through `resolve-feature`, and enumerate the `--all` set from `dashboard`'s per-spec status inventory (`specs[].status ∈ {in-progress, done}`, read from the file its `lists-file` names when its `form` is `file`) rather than a directory scan. Before step 3, read **§Load rules** and **§Run review passes** in `.ductus/reference/review.md`, which hold the review's inputs and each pass's definition and severity.
+
+1. When the spec's status is not `in-progress` or `done`, halt with the message item 2 of **§Resolve target and scope** in `.ductus/reference/review.md` gives. When the spec's `tasks.md` holds an unchecked box under any heading but a task this run's own deferral names, halt this feature's run naming the boxes: a review runs once implementation is complete, since nothing can say whether a task still open would change what it reads, and the write-review primitive refuses before then too. Invoke `compute-review-scope`; the primitive's description states how the diff base, `base-source`, the scope and `review-owed` are decided, and a `diff-base` that is empty, or a window wider or narrower than the change under review, is settled by the base-override rules of **§Window and coverage** in `.ductus/reference/review.md` before any pass runs. When `review-owed` is false and neither `--since` nor the operator asks for a review, report `review-owed: false` — this reopening changed no code, and every criterion is ticked and judged met with its current text, so it owes `/papur:analyze` and no review — and stop this feature's run, writing nothing. When `scope-count` is zero, skip the passes and waivers, but not the criteria step (steps 7.1 to 7.3), which judges every criterion whatever the window holds, and go on at step 9 — an observation the reviewer supplies is still dispositioned — and step 11 emits the nothing-to-review-yet report, blocking only through a criterion judged not met; when `deleted-count` is above zero the scope is empty because every path it would hold was deleted, so that report and the record's Summary name each path in `deleted` and say no pass could read it, and a review owed for deletions never reads as a window that changed nothing; when that write refuses, since the record counts a finding it would clear unread, report the refusal and stop this feature's run. **A failed call is not an empty scope, and neither is an absent list.** Never route a failed call or a file-form result to the empty-scope branch, which records a non-blocking 0-findings review byte-identical to a genuinely clean one. Otherwise confirm tech-stack alignment first (host judgment, not a primitive): read the active config file; when its `[review] tech-stack-verified` flag is true, skip the check (a present value that is not a boolean halts here, naming the key, the file and the value); else compare the AGENTS.md Tech Stack section against the code in scope, halting with the tech-stack-misalignment message (**§Blocking message** in `.ductus/reference/review.md`) on a mismatch, and — on success — confirm before persisting the flag (see the tech-stack alignment check under **§Resolve target and scope** in `.ductus/reference/review.md`) and write `[review] tech-stack-verified = true` to the **active config file** (the newest existing of `.ductus/config.toml`, `.govern/config.toml`, or the legacy root `.govern.toml`, else `.ductus/config.toml`; specs 042 and 049 — a write outside the `/ductus` migrations never creates a partial `.ductus/config.toml` alongside a lingering older file).
+2. Invoke `discover-rule-files` to select this run's rule files — suffix classification, the `[rules] surfaces` selection, the disabled-rule-files filter, and leaving out each file whose header gives its rules to `/papur:analyze` alone (**§Load rules** in `.ductus/reference/review.md`) — and emit the ordered notice lines it returns verbatim. Pass `rules`, and under `extra-files` each rule file outside the rule-file directory that `AGENTS.md` references, so each file's rules, ID, tier and Statement, arrive in its `rule-files` rather than through reading the rule files. Past the read size `selected`, `notices` and `rule-files` are in the file `lists-file` names, with `selected-count` inline: read that file with the host's file reader, in parts by line offset when it is long, never through the shell.
+3. <!-- llm:performReview --> A host that can start a subagent runs this pass, steps 4 to 7 and the criteria step's steps 7.1 and 7.2 in one fresh subagent and continues at step 7.3 with only the findings, observations, criterion verdicts and coverage it returns, so the rule files and in-scope files never enter the host's context; a host that cannot runs them itself (**§Passes in a subagent** in `.ductus/reference/review.md`). Run the **security** pass over the in-scope files against the loaded `security-*.md` rules, returning one finding per violation (rule id, severity, file, line range, site, confidence, explanation), each reported under its owner by the rule's **Not flagged:** routing (**§Security pass** in `.ductus/reference/review.md`).
 4. <!-- llm:performReview --> Run the **reuse** pass: flag logic that duplicates existing utilities or belongs in shared code.
-5. <!-- llm:performReview --> Run the **quality** pass: detect bugs, missing error handling, unhandled edge cases, and contract violations; low-confidence findings are recorded separately and do not block.
-6. <!-- llm:performReview --> Run the **efficiency** pass: flag N+1 queries, repeated work, and unbounded loops over user-controlled input.
-7. <!-- llm:performReview --> Run the **simplicity** pass: flag overengineering, premature abstraction, and dead branches; mark a finding auto-fixable when a simpler form is mechanically derivable. A dimension-restricting flag (`--security` / `--simplicity` / `--quality`) skips the unselected passes.
-8. Invoke `process-waivers` to classify the spec's `review.waivers` against the findings the passes just accumulated (apply / expire / retain / malformed / duplicate), emitting each notice it returns. **On a dimension-restricted run (`--security` / `--simplicity` / `--quality`), pass the skipped dimensions as `skipped-passes`** so a waiver whose rule did not fire is _retained_, not expired — the partial run cannot see the dimensions it didn't run, so it must not prune their waivers. The applied set is excluded from the blocking count; the expired set is dropped on the next write; the retained set is left in the frontmatter untouched. On an unrestricted run `skipped-passes` is empty and a waiver expires only when its file is gone or its rule genuinely no longer fires.
-9. Invoke `write-review` with the accumulated pass findings, the accumulated pass **observations**, the waiver results (`applied` / `expired`), and the scope to render `specs/NNN-feature/review.md`, update the spec `review:` frontmatter block, and capture each observation to `specs/inbox.md`. Supply the required scalars the primitives don't produce — `reviewed-at` (the current UTC timestamp) and `reviewed-against` (HEAD sha), both host-provided (as the session-write's `set-at` is); `diff-base` comes from step 1. It applies the cross-pass dedup (highest-severity-wins on rule + file + overlapping range), buckets findings into MUST / SHOULD / low-confidence / waived, prunes expired waivers (preserving any adopter-authored waiver fields on the survivors), records the skipped passes, renders the observations, and sets blocking when MUST violations remain. With `--fix`, apply the auto-fixable findings, re-run the affected passes, and invoke `write-review` a second time for the post-fix counts.
+5. <!-- llm:performReview --> Run the **quality** pass: detect bugs, missing error handling, unhandled edge cases, and contract violations, and apply the loaded `quality-cross.md` and every other loaded rule file no other pass takes (**§Load rules** in `.ductus/reference/review.md`); low-confidence findings are recorded separately and do not block.
+6. <!-- llm:performReview --> Run the **efficiency** pass: flag N+1 queries, repeated work, and unbounded loops over user-controlled input, and apply the loaded `performance-*.md` rules.
+7. <!-- llm:performReview --> Run the **simplicity** pass: flag overengineering, premature abstraction, and dead branches; mark a finding auto-fixable when a simpler form is mechanically derivable. A dimension-restricting flag (`--security` / `--simplicity` / `--quality`) skips the unselected passes. Name in the Summary each loaded rule file whose pass did not run, as unapplied (**§Load rules** in `.ductus/reference/review.md`).
 
-## Markdown-only reference
+   1. Invoke `read-spec` against the feature to load its acceptance criteria (text, label and checkbox state, in body order) for the criteria step (**§Criteria step** in `.ductus/reference/review.md`).
 
-The numbered Instructions above are the deterministic path — the runtime's primitives own the rule-file selection, waiver arithmetic, scope resolution, and report scaffolding, and the five passes cross the boundary at the `performReview` extension point. When no runtime is available, walk the detailed procedure below by hand, for each targeted feature, in order.
+   2. <!-- llm:verifyCriteria --> Run the **criteria step**: judge each acceptance criterion the `read-spec` call above loaded against the code that implements it, wherever that code lies — the window says what changed, not where a criterion's code is — one met or not-met verdict per criterion, its note the evidence (the path and symbol, and the test that proves it) or why it is not met. Judge each individually; never batch-judge. A criterion the step cannot judge gets no verdict and is named in the Summary. A dimension-restricting flag does not skip this step.
 
-### 1. Resolve target and scope
+   3. Invoke `mark-criterion` for each verdict, by label (by index for a criterion with none), with `checked` set to the verdict, so a met criterion is ticked and a not-met one unticked. A tick refused because `spec.md` changed under it is reported beside its verdict and leaves the criterion as it was. Never batch-mark.
 
-1. Resolve the working feature from `--all` or the current `/papur:target`.
-   If neither yields a target, halt with `no target — run /papur:target first`.
-2. Read the spec frontmatter. If `status` is not in `{in-progress, done}`,
-   halt with `review only runs against in-progress or done specs`.
-3. Build the file scope per [Inputs](#inputs). If the resolved scope is
-   empty (no implementation files yet), write a `review.md` recording 0
-   findings across all five passes, `blocking: false`, and exit `0` — there
-   is nothing to review yet. Skip steps 4–5 and the rest of this run.
-4. **Tech-stack alignment check.**
-   - Read the active config file (resolution rule in Instructions step 1;
-     spec 042). If `[review] tech-stack-verified = true`, skip to
-     step 5.
-   - Otherwise, read `AGENTS.md`'s `Tech Stack` section and inspect the file
-     scope (extensions, imports, runtime/manifest markers). Confirm the
-     documented stack appears consistent with the implementation. A
-     missing or empty `Tech Stack` section, or an inconsistency between
-     documentation and code, halts the run with the
-     [tech-stack-misalignment](#blocking-message) message and exits `1`.
-   - On a successful check, prompt the operator once (routing the prompt
-     through `gate-confirm` on the runtime path, as the other
-     confirm-before-write pipeline steps do): _"Tech-stack alignment
-     confirmed. Persist this so future runs skip the check? (Y/n)"_. On
-     `Y`, write `[review] tech-stack-verified = true` to the active config
-     file (same resolution as Instructions step 1). On `n` or skip, the check runs again on the next
-     invocation. To re-run the check after a stack change, the operator
-     removes the line manually — `/papur:review` does not auto-reset.
-5. Discover rule files by suffix. List `framework/rules/*.md` in ductus's
-   own repository, or `specs/rules/*.md` in adopter projects. For each
-   file, classify by basename suffix:
-   - `*-backend.md` → backend surface
-   - `*-frontend.md` → frontend surface
-   - `*-cross.md` → cross-cutting (applies to every stack)
-   - anything else → unrecognized — load for every stack and emit one
-     stdout line per file:
+8. Invoke `process-waivers` to classify the waivers recorded in `review.md` against the findings the passes just accumulated, passed as `fired`, one entry per finding with its `site` and `line-range` (**§Per-run waiver processing** in `.ductus/reference/review.md` and **§Malformed and duplicate waivers** in `.ductus/reference/review.md`), emitting each notice it returns (in the file form, `form` is `file`, the `applied`, `expired`, `retained` and `notices` lists are under those names in `lists-file`, and each `-count` says how many). **On a dimension-restricted run (`--security` / `--simplicity` / `--quality`), pass the skipped dimensions as `skipped-passes`**, so a waiver whose rule did not fire is _retained_, not expired, and pass `since` when the run took `--since`, so one on a file the scope does not hold is too. The applied set is excluded from the blocking count; the expired set is dropped on the next write; the retained set is left in the frontmatter untouched.
+<!-- audit:ignore-promotion -->
+9. Process stored decisions (host responsibility): read the `decisions:` list in `review.md` and match each observation the passes returned to the stored decision describing the same issue — observation text is the reviewer's own wording, so the match is the host's judgment, not a byte comparison. Then call the process-decisions primitive with the feature, `record: review`, `fired` — for each observation, the stored key it matched, or else its rendered line (its text, then an em dash and its path in backticks) — `restricted` set when any pass did not run (a dimension-restricting flag, or an empty scope that skipped them all), and `since` when the run took `--since`, so a decision on a file the scope does not hold is retained. Pass the violations too, as `fired-violations`, one entry per finding with its `rule`, `file`, `site` and `line-range`, and its `decision-key` when `decisions:` stores a deferral under its own key, as step 8 passes `fired`: the primitive keys each `` rule {rule-id} at {file} in `{site}` ``, refusing a `decision-key` that is not that key, since no match by the host moves a finding to another site's deferral, and counts the findings at a key as the waiver primitive of step 8 counts those at an anchor, since a stored deferral covers only as many findings as its `covers` says. Read `matched`, `expired`, `lapsed` and `notices` from the file its `lists-file` names when its `form` is `file`. Each `matched` decision disposes of its finding under the stored outcome, with nothing asked, and the finding carries that key to step 11 as its `decision-key`, except that a waiver the rule decided does not dispose of an observation this run judges a broken contract: it goes to step 11 to be dropped, and step 10 decides the observation. An `expired` decision whose key names a file the scope holds is checked against that file first, since a pass that read the file in part leaves it unfired: when its issue still stands, fire its key and call the primitive again — except one its notice expired for more findings than it covers or as recorded before sites, which no re-fire revives. Each other `expired` decision goes to step 11 to be dropped; `retained` decisions stay untouched. Each `lapsed` decision (spec 076) goes to step 11 to be dropped with the expired ones, and its finding needs a new disposition: an observation's is decided in step 10, while a violation counts again until it is fixed, waived with `--waive` or deferred anew with `--defer`; with nobody to ask, it is undispositioned and, when gating, blocks. Emit the result's `notices` verbatim. When the primitive refuses because the list does not parse, report that, disposition each observation as though nothing were stored, and tell the operator the record cannot be written until the list is repaired.
 
-     ```text
-     rule file <name> has unrecognized suffix — loading for all stacks; rename to -backend.md, -frontend.md, or -cross.md
-     ```
+<!-- audit:ignore-promotion -->
+10. Fix and route (host responsibility). Before anything is written, take the run's first fix-round base: call the start-fix-rounds primitive with the feature and keep its `base` and its `budget` for step 12; a failed call leaves no base, and step 12 records any fix the run writes as one round not re-read. A malformed `[review] re-reads-off` fails it before anything is written: report the error and stop the run. Then apply the disposition rule to each observation no stored decision disposed of, asking nobody and marking each `by-rule`: a chore is fixed in the run, and anything else is waived with its reason, except as follows. A defect that makes this review's own result wrong is never waived: it is fixed in the run or deferred as a broken contract is. An observation showing the spec's own code breaks its contract is marked `contract-break`, and is fixed in the run or deferred to the spec's own task: such a deferral is the only write that reaches the operator, and it is written only after the gate-confirm primitive returns a confirmed decision, with the operator free to name another home by the **§Groom decision tree** in `.ductus/reference/groom.md`, an external work-item ID beside it or in its place, or a waiver with their reason. A deferral to a `done` spec names the `done → in-progress` reopen in its confirmation and performs it through the set-status primitive with `from: done`. When a chore fix wrote, re-run the affected passes before step 11, as `--fix` does, so the record describes the fixed tree. A fix that fails or proves not to be mechanical is reverted, then waived by the rule, or on a broken contract proposed as a deferral; a declined deferral leaves the observation waived with the operator's reason, or undispositioned; a confirmed deferral whose write fails is undispositioned, and the failure is reported beside the observation. **With no operator to confirm**, a host that cannot ask still applies the rule, leaving each broken contract undispositioned, which holds `done` until a run with an operator decides it, and `ductus exec`, whose walker no-ops this step by design, writes nothing: each unmatched observation is recorded undispositioned. MUST and SHOULD violations are not dispositioned here: each is fixed, waived with `--waive`, or deferred with `--defer` (**§Deferrals** in `.ductus/reference/review.md`). Nor is a criterion step 7.2 judged not met, which is no observation and is never waived or deferred: it is fixed in the run when the fix is mechanical, and judged again, and otherwise stays not met in the record, which blocks, until the code is fixed or the criterion corrected or moved to the spec that owns the work (**§Criteria step** in `.ductus/reference/review.md`).
+    The detail is under **Observations** in **§Write `review.md`** in `.ductus/reference/review.md`.
 
-   Determine the **surface selection** for this run. Read `.ductus/config.toml`
-   `[rules] surfaces` (see [Inputs](#inputs)):
+11. Invoke `write-review`, passing `loop-open` so the record marks the fix-round loop open, with the accumulated pass findings, the accumulated pass **observations** — each with its `disposition` (`outcome`, plus a deferral's `target`, `task` and `work-item`, or a waiver's `reason`), its `path`, which a broken contract left open must name, and, when step 9 matched it, its `decision-key`; each finding `--defer` named, or step 9 matched to a stored deferral, carries its deferral the same way — the waiver results (`applied` / `expired`, read from `lists-file` when step 8 returned the file form, with the anchor of a stored waiver a `--defer` replaces moved from `applied` to `expired`), `expired-decisions` — step 9's expired and lapsed decisions, a rule's waiver of a broken contract, plus a stored deferral a `--waive` replaces — `new-waivers`, the rule and reason of each `--waive`, whose anchors the primitive derives from the findings' files and sites, refusing one whose rule fires at a finding naming no site, as it refuses such a finding deferred, the scope, and `criteria`, step 7.2's verdicts, each by `label` (by `index` for a criterion with none) with `met` and its evidence as `note`. A departure entry in the spec's `## Applicable Rules` needs no `--waive`: the primitive derives its waiver itself (**§Waivers** in `.ductus/reference/review.md`), and the result's `malformed-departures` is reported beside the record, one line each, since an entry listed there waived nothing; in the file form (`form` is `file`) the list is under that name in `lists-file`, and `malformed-departures-count` says how many. Supply the required scalars the primitives don't produce — `reviewed-at` (the current UTC timestamp) and `reviewed-against` (step 1's `head`, the commit the passes' scope was resolved against); `diff-base` from step 1; **`examined`, how many of the in-scope files the passes above actually read**, a numerator against the `scope` the primitive resolves itself; **`unread`, the scope entries the passes did not read**, `[]` when they read every one, since another spec's window takes each entry it leaves out as read (**§Window and coverage** in `.ductus/reference/review.md`); and `decided-by` (`git config user.email`), which the primitive requires when any observation or violation is newly deferred or waived. With `--fix`, apply the auto-fixable findings (**§Apply `--fix` (optional)** in `.ductus/reference/review.md`, within **§Auto-fix scope** in `.ductus/reference/review.md`), re-run the affected passes, and invoke `write-review` a second time, `loop-open` included, for the post-fix counts. A write refused with the changed-since-read error wrote nothing: another writer changed `review.md` after the primitive read it, so report the conflict and run the write again from the same arguments, which reads the record as it now is. A write refused because a commit after `reviewed-against` changed a path the scope holds wrote nothing either: invoke the compute-review-scope primitive again, read each moved path (the refusal names up to three, and the `git log --relative --name-only` command it gives lists every one) and each path the new scope adds, or list it in `unread`, and write again with its `head`: a moved path the scope already held is not added by the re-run. Render the result's `dispositions` as the `observations` row and its `analyze-freshness` as the `analyze` row (**§Output** in `.ductus/reference/review.md` lays out the summary; **§The `observations` row** in `.ductus/reference/review.md` and **§The `analyze` row** in `.ductus/reference/review.md` are its rows). Neither affects the exit code.
 
-   - **Set to a valid list** (every member in `{backend, frontend}`) —
-     keep the rule files whose surface is listed in `surfaces`, plus
-     every `*-cross.md`. This explicit operator-set selection _replaces_
-     the detected-stack filter; the stack from step 4 is not consulted
-     for rule-file selection. The **empty list** (`surfaces = []`) is a
-     valid value of this case and means **cross-only**: no
-     `*-backend.md`/`*-frontend.md` file is kept, only `*-cross.md`. The
-     empty list is distinct from the key being unset (below) — it is the
-     operator explicitly declaring "no surface rules, only cross-cutting
-     ones," not a request to derive.
-   - **Set to a degenerate value** — fail fast (do not silently ignore,
-     do not warn-and-continue), consistent with `CFG-ENV-003`'s
-     fail-fast-on-invalid-configuration posture:
-     - **Unrecognized member.** A member outside `{backend, frontend}` —
-       a typo like `"fullstack"`, or `"cross"` (cross-cutting files are
-       unconditional, not a selectable surface) — halts the run with
-       `/papur:review: invalid [rules] surfaces member "<value>" — accepted members are "backend" and "frontend" (use [] for cross-only; -cross.md files always apply)`.
-       A list mixing valid and invalid members (`["backend", "fullstack"]`)
-       fails on the invalid member; a valid member does not rescue it.
-     - **Type mismatch.** A non-list value (`surfaces = "backend"`, a
-       bare string) halts the run with
-       `/papur:review: [rules] surfaces must be a list of strings, got <type>`.
-   - **Unset** — fall back to the detected stack from step 4: keep the
-     matching surface, keep every `*-cross.md` (pre-033 behavior).
-
-   In every non-error case, keep every unrecognized-suffix file
-   unconditionally.
-
-   Then apply the **disabled-rule-files filter**. Read `.ductus/config.toml`
-   `[[review.disabled-rule-files]]` (see [Inputs](#inputs)). For each
-   entry, in list order:
-
-   - **Drop + notice (selected match).** `file` matches the
-     basename of a file currently in the post-selection set. Remove
-     it from the set and emit one line:
-
-     ```text
-     disabled-rule-file: <filename> — <reason> (<config-file>)
-     ```
-
-     `<config-file>` is the repo-relative resolved config file the
-     disable came from — `.ductus/config.toml`, or the legacy root
-     `.govern.toml` on a pre-migration layout. Collapse internal
-     whitespace in `reason` (including newlines from TOML multi-line
-     strings) to single spaces before emitting — the notice is
-     single-line by contract.
-
-   - **No-op notice (non-selected match).** `file` matches a
-     basename in the rule-file directory but the file was NOT in the
-     post-selection set (different surface). Emit one line and
-     change nothing:
-
-     ```text
-     disabled-rule-file (no-op): <filename> not selected by stack detection
-     ```
-
-     This is honest about state — the entry is currently a no-op,
-     becomes load-bearing if the project's stack changes later.
-
-   - **Unknown warning.** `file` does not match any basename in the
-     rule-file directory. Emit one line and change nothing:
-
-     ```text
-     unknown disabled-rule-file: <filename> (no such file in the rule-file directory)
-     ```
-
-     This covers renamed/moved files; not a fatal error.
-
-   - **Malformed warning.** Entry is missing `file` or `reason`, or
-     `reason`'s trimmed length is < 16 Unicode codepoints. Skip the
-     entry (no file is dropped) and emit one line naming the offending
-     index (same pattern as **Malformed and duplicate waivers** below):
-
-     ```text
-     malformed disabled-rule-file at review.disabled-rule-files[N]: <reason>
-     ```
-
-     The entry is NOT auto-removed; the operator cleans it up.
-
-   - **Duplicate warning.** Same `file` listed twice. Only the first
-     entry applies; each subsequent duplicate emits one line and is
-     not auto-pruned:
-
-     ```text
-     duplicate disabled-rule-file: <filename> — entry [N] ignored
-     ```
-
-   All four warning forms emit to stdout and **do not affect the exit
-   code**. `/papur:review`'s exit status is driven exclusively by MUST
-   violations (see [Output](#output)). `.ductus/config.toml` hygiene is a
-   separate concern.
-
-   Finally, emit a single stdout line naming what was selected:
-
-   ```text
-   loading rule files: <comma-separated basenames>
-   ```
-
-   Disabled files are excluded from this list. The notice fires AFTER
-   all disabled-rule-file lines, so a normal run reads top-down as:
-   any `disabled-rule-file: …` notices, then `loading rule files: …`.
-   This is the discoverability surface — adopters can confirm which
-   files were considered without parsing the report.
-
-### 2. Load rules
-
-Load these inputs inline as the authoritative review criteria:
-
-- Every rule file selected by the suffix-based discovery in step 5
-- Any rule file outside the rule-file directory (e.g., `docs/rules/internal-api.md`)
-  referenced from `AGENTS.md` — see [Notes for adopters](#notes-for-adopters)
-- `AGENTS.md` `Code Style`, `Testing`, `Gotchas`, and `Boundaries` sections
-- The target spec's acceptance criteria and any `scenarios/*.md` files
-
-These are the **only** sources of normative rules for the review. Do not
-introduce review criteria from outside the project.
-
-### 3. Run review passes
-
-Run the five passes below. When a flag restricts dimensions (`--security`,
-`--simplicity`, `--quality`), skip the unselected passes and record them as
-`skipped` in the report.
-
-When the same finding (matching rule ID, file, and overlapping line range)
-is produced by more than one pass, retain only the highest-severity instance
-in `must-violations` and `should-violations`; lower-severity duplicates are
-dropped from the counts and the report. Pass-of-record for the surviving
-finding is the highest-severity pass that flagged it.
-
-#### Security pass
-
-Walk every file in scope against the loaded security rules. For each finding,
-record: rule ID, severity (MUST or SHOULD), file path, line range, the rule
-text, and a one-sentence explanation of how the code violates it. **Do not
-flag patterns that are not in the loaded rules** — the project's rule set is
-authoritative.
-
-That rule holds for every pass below, and it is not a reason to drop what you
-noticed: anything real that matches no loaded rule is an **observation**, and
-every pass may return them alongside its findings — see the Observations
-rules under [4. Write `review.md`](#4-write-reviewmd). Recording one is what
-captures it, so there is nothing separate to remember.
-
-#### Reuse pass
-
-Identify logic that duplicates existing utilities or that should be extracted
-into shared code. Cross-reference with `specs/system.md` for established
-patterns and shared infrastructure. Severity is SHOULD unless the duplication
-contradicts an explicit MUST in `AGENTS.md` `Boundaries`.
-
-#### Quality pass
-
-Detect bugs, missing error handling, unhandled edge cases, off-by-one errors,
-and contract violations against `specs/errors.md`. Each finding carries a
-`confidence` tier — `high` or `low` (the string the `write-review` contract
-consumes, compared case-insensitively). A `low`-confidence finding is recorded
-in the Low-confidence section regardless of severity and is excluded from the
-blocking count; use it when the finding is plausible but unconfirmed.
-
-#### Efficiency pass
-
-Flag N+1 queries, repeated work, unbounded loops over user-controlled input,
-and other performance issues. Severity is SHOULD by default; promote to MUST
-when the inefficiency is also a security concern (e.g. unbounded input is a
-DoS vector covered by the security rules).
-
-#### Simplicity pass
-
-Identify overengineering: premature abstraction, unnecessary indirection,
-configuration that could be a constant, branches that are dead under the
-current spec. Severity is SHOULD. If a simpler form is mechanically derivable,
-mark the finding `auto-fixable`.
-
-### 4. Write `review.md`
-
-Write the report to `specs/NNN-feature/review.md`. A scenario-targeted run still writes to the same spec-level path; the `scenario:` frontmatter field records which scenario was reviewed and `reviewed-against` records the commit. Re-running review (scenario- or feature-targeted) supersedes the prior `review.md` wholesale.
-
-```markdown
----
-spec: 042-example-feature
-reviewed-at: 2026-05-10T14:32:00Z
-reviewed-against: <sha-of-HEAD>
-diff-base: <sha of the parent of the in-progress transition commit>
-must-violations: 0
-should-violations: 3
-low-confidence: 2
-captured-issues: 1
-skipped-passes: []
----
-
-# Review — 042-example-feature
-
-## Summary
-
-<one paragraph: overall posture, count by severity, blocking status>
-
-## MUST violations (blocking)
-
-<one heading per finding; `*None.*` when the section is empty>
-
-## SHOULD violations (advisory)
-
-## Low-confidence findings
-
-## Waived findings
-
-## Captured issues
-
-<one bullet per item appended to specs/inbox.md since diff-base; `*None.*` when empty>
-
-## Observations
-
-<one bullet per observation this run recorded; `*None.*` when empty>
-
-## Skipped passes
-
-<`*None.*` when none>
-```
-
-Every empty section renders the literal `*None.*` line — the `write-review` primitive emits it, and the markdown-only path writes the same so the two paths produce byte-identical reports. The **Captured issues** and **Observations** headings carry no suffix.
-
-The **Captured issues** section surfaces issues the agent recorded to
-`specs/inbox.md` automatically during the work being reviewed (per
-§brownfield-inbox Automatic issue capture). Populate it by diffing
-`specs/inbox.md` against `diff-base` (`git diff <diff-base>..HEAD -- specs/inbox.md`)
-and listing every line added in that window. These are **informational** —
-they are incidental findings parked for `/papur:groom`, not review
-findings against the loaded rules. They do **not** count toward
-`must-violations` / `should-violations`, do **not** affect `review.blocking`,
-and do **not** change the exit code. The section is the "presented as part of
-the review" half of the capture contract: it makes mid-task captures visible at
-the gate so none is forgotten. When the inbox shows no additions in the window,
-write `captured-issues: 0` and leave the section empty.
-
-A captured issue is a **mirror of an inbox line, not a second home for it**.
-The inbox is the live list; this section is a snapshot of what was added during
-one review window. So when a re-review finds an item no longer in
-`specs/inbox.md` — `/papur:groom` routed it, or the work resolved it in
-window — say so on the entry (tick its checkbox, name the commit or scenario
-that closed it) and recount `captured-issues` against what is still outstanding.
-Leaving a groomed item written as open is the failure mode this rule exists to
-prevent: the snapshot ages into a list of issues that read as pending years
-after they were closed, and a reader cannot tell which are real without
-re-deriving every one against the inbox.
-
-The **Observations** section is the home for something the reviewer judged
-real that maps to **no loaded rule**. Inventing a rule for it is not the answer
-— the rule set is authoritative — and the free-text Summary is not either,
-because `write-review` regenerates the Summary wholesale on the next run and it
-is per-spec, so a cross-cutting note filed there is both erased and misfiled.
-An observation is **not** a finding: it never enters the
-`must-violations` / `should-violations` / `low-confidence` counts, never
-affects `review.blocking`, and never changes the exit code. Each entry carries
-its own one-line text and, optionally, the path it anchors to. Leading the text
-with a category (`security` / `leak` / `convention` / `bug` / `perf` / `other`)
-matches the inbox template's auto-capture form and helps `/papur:groom`
-route it, but nothing parses it.
-
-**Recording an observation is capturing it.** For each entry, the same call
-that writes the section appends a bullet to `specs/inbox.md`:
-
-```text
-- [ ] {text} — `{path}` (captured during review of {NNN-feature})
-```
-
-with the path clause omitted when the observation has no path. The append is
-dedup-guarded on that whole rendered line, so re-running a review over an
-unchanged repo appends nothing while the report still renders the section —
-the report describes _this run_. On the markdown-only path, write the **inbox
-bullet first and the report section second**, and halt without writing
-`review.md` if the inbox cannot be written. That order is the point of the
-whole mechanism: a report whose Observations section claims a capture that did
-not happen is the defect this replaces, one level down. There is deliberately
-no path that records an observation in the report without also recording it in
-the inbox, and no separate `append-inbox` call to forget. An observation
-supplied to a run whose scope is empty still captures — the reviewer's
-judgment is the input, not the diff.
-
-Observations sit next to **Captured issues** because the two are complements:
-Captured issues mirrors what the inbox _already_ held over the review window,
-while Observations is what this run added to it. An observation whose subject
-later becomes a real rule finding needs nothing special — the finding counts,
-and the observation is the reviewer's to drop on the next run.
-
-The same reconciliation applies to the finding sections. A SHOULD or
-low-confidence entry whose disposition is "keep as-is" belongs under **Waived
-findings** with its rationale, not under its original heading — an accepted
-trade-off left filed as a violation is indistinguishable from unfinished work.
-An entry fixed after the report was written keeps its place, gains a
-**Status** line naming the commit or scenario that closed it, and drops out of
-the frontmatter count. The counts state what is _outstanding_, so they and the
-body must agree; do not invent frontmatter fields to track dispositions —
-`write-review` emits a fixed field set and would drop them on the next run.
-
-Each finding follows this shape:
-
-```markdown
-### MUST: <rule-id> — <one-line summary>
-
-- **File**: `path/to/file.ts:42-55`
-- **Rule**: <verbatim rule text from the rule file (framework/rules/... or specs/rules/...)>
-- **Finding**: <one to three sentences>
-- **Auto-fixable**: yes | no
-- **Suggested fix**: <code block or prose>
-```
-
-The report is regenerated on every `/papur:review` run — never appended.
-Findings the user has explicitly waived (see [Waivers](#waivers)) carry across
-runs as long as their anchor (rule + file) is still valid.
-
-### 5. Apply `--fix` (optional)
-
-When `--fix` is set, after writing the report:
-
-1. Apply every finding marked `auto-fixable: yes` whose severity is SHOULD,
-   plus MUST findings whose suggested fix is purely mechanical (e.g. removing
-   a hardcoded secret, adding a missing CSRF token attribute).
-2. **Never** auto-apply fixes that alter externally observable behavior, change
-   error messages or status codes, or modify schema. These require a manual pass.
-3. Re-run only the affected passes against the modified files. Update
-   `review.md` with the post-fix counts.
-4. Stage the modified files but do not commit. The user owns the commit.
-
-### 6. Update spec frontmatter
-
-After writing the report, update the target spec's frontmatter:
-
-```yaml
-review:
-  last-run: 2026-05-10T14:32:00Z
-  reviewed-against: <sha>
-  must-violations: 0
-  should-violations: 3
-  low-confidence: 2
-  blocking: false
-```
-
-`blocking: true` when `must-violations > 0`. This is the field other commands
-read. (`write-review` writes `last-run`, `reviewed-against`, `must-violations`,
-`should-violations`, `low-confidence`, and `blocking`, plus the `waivers` list
-when present.)
-
-## Blocking semantics
-
-A spec MUST NOT advance from `in-progress` to `done` while its frontmatter
-records `review.blocking: true`. This is enforced as follows:
-
-1. **`/papur:implement`** — before marking `status: done`, its `check-review-gate`
-   runs three checks in order, first failure wins. First, the feature
-   directory's markdown lint; a violation halts before the review block is
-   consulted. Then the `review:` block: a missing/null `review.last-run` (or
-   absent block) halts with
-
-   ```text
-   blocked: spec has not been reviewed — run /papur:review before completing
-   ```
-
-   and only `review.blocking: true` halts with the MUST-violations message plus
-   waive guidance:
-
-   ```text
-   blocked: spec has N MUST violation(s) — see specs/NNN-feature/review.md
-   resolve the violations and re-run /papur:review, or waive with /papur:review --waive
-   ```
-
-2. **`/papur:analyze`** — adds a check to its existing audit: if the spec's
-   status is `done` but `review.blocking` is `true` or `review.last-run` is
-   missing, this is a validation failure. Composable with `--fix`:
-   `/papur:analyze --fix` reverts `done` → `in-progress` and emits a notice
-   (it never silently downgrades; the notice is the point).
-
-3. **CI hook** — the shipped GHA template at
-   `framework/templates/ci/adopter-generators.yml` fails when any
-   spec at `status: done` has `review.blocking: true` or missing
-   `review.last-run`. A `done` spec with **no** `review:` block at all is
-   grandfathered (it predates `/papur:review`) and exempt — matching
-   `/papur:analyze`'s own grandfather rule.
-
-This implements the constitution's quality gate via three mutually reinforcing
-mechanisms rather than relying on any single one — consistent with the
-**Design Principles** rule: never depend on human diligence.
-
-## Blocking message
-
-Emitted by `/papur:review` when tech-stack alignment fails (missing/empty
-`AGENTS.md` `Tech Stack` section, or documented stack inconsistent with
-implementation):
-
-```text
-blocked: tech-stack alignment failed — AGENTS.md Tech Stack {missing | inconsistent with code in scope}
-
-  expected: <stack inferred from scope, e.g., "TypeScript + React frontend">
-  documented: <AGENTS.md Tech Stack contents, or "(empty)">
-
-reconcile AGENTS.md Tech Stack with the implementation, then re-run /papur:review.
-to skip this check on future runs after manual reconciliation, add
-[review] tech-stack-verified = true to .ductus/config.toml.
-```
-
-## Waivers
-
-A MUST violation can be waived only with explicit, recorded justification:
-
-```text
-/papur:review --waive <rule-id> --reason "<text>"
-```
-
-This appends to the target spec's frontmatter:
-
-```yaml
-review:
-  waivers:
-    - rule: SEC-BE-014
-      file: src/api/internal.ts
-      reason: "Endpoint is internal-only behind mTLS; rule applies to public APIs"
-      waived-at: 2026-05-10T14:40:00Z
-      waived-by: <git config user.email>
-```
-
-Waived findings drop out of the `must-violations` count (there is no separate
-`waived-violations` frontmatter field; `write-review` reports the waived count
-only in its transient result). They appear in `review.md` under the **Waived
-findings** section. They survive across `/papur:review` runs as long as the
-rule ID and file location still match; if either changes, the waiver expires
-and the finding re-blocks. Line numbers are not part of the waiver anchor —
-the contract is `(rule, file)`, so code moving within the file does not
-expire the waiver.
-
-### Per-run waiver processing
-
-On every `/papur:review` run, after the review passes have produced their
-findings (see **Run review passes**) and before counting them into `must-violations`
-or writing `review.md`, walk `review.waivers` and classify each entry against
-those findings. A waiver can only be judged against findings that exist — when
-an empty scope skips the passes entirely, leave the waivers untouched; and on
-a dimension-restricted run, waivers anchored to skipped dimensions apply
-unchanged rather than expiring:
-
-1. **Apply** when the file exists at the anchored path AND the rule still
-   fires there. The finding appears under **Waived findings** in
-   `review.md` with the waiver's `reason`; it is excluded from
-   `must-violations`.
-2. **Expire** when either the file no longer exists at the anchored path
-   (renamed, deleted, moved) or the rule no longer fires there (offending
-   code fixed, rule removed, rule renamed — IDs are permanent per
-   `specs/008-security-rules/data-model.md`, so a renamed rule is a
-   different rule). On expiry, drop the entry from `review.waivers` on the
-   next frontmatter write AND emit one line on stdout:
-
-   ```text
-   waiver expired: rule {rule-id} at {file} ({reason})
-   ```
-
-   The notice is the point of the action; expiry MUST NOT be silent. When
-   the same rule still fires anywhere in scope after a drop, the finding
-   re-counts toward `must-violations` and `review.blocking` flips to
-   `true` if it was previously `false`.
-3. **Do not extend** a waiver to a different file. If the same rule fires
-   at a path other than the waiver's anchor, that is a separate finding;
-   the operator records a fresh `--waive` if it is also intentional.
-
-### Malformed and duplicate waivers
-
-- A waiver entry missing any of `rule`, `file`, `reason`, `waived-at`, or
-  `waived-by` is **skipped** with a one-line warning naming the offending
-  entry (e.g. `malformed waiver at review.waivers[2]: missing 'reason'`).
-  The entry is NOT auto-removed; the operator must clean it up to silence
-  the warning. Malformed entries are operator-authored state, not garbage
-  for the framework to collect.
-- Two or more waivers for the same `(rule, file)` pair: **only the first
-  applies**. Each duplicate emits a one-line warning
-  (`duplicate waiver: rule {rule-id} at {file} — entry [N] ignored`) and is
-  NOT auto-pruned. Same reasoning: the framework treats duplicates as
-  operator state worth investigating, not silent state to clean up.
-
-The `review.waivers` list follows the §text-first-artifacts open-schema
-rule. Adopters MAY add fields (e.g., `co-waived-by`, `approved-by-team`,
-`ticket`) to enforce org-specific waiver policy in their own CI; `/papur:review`
-and `/papur:analyze` will not error on unknown fields, and `write-review`
-preserves them verbatim on a surviving waiver when it re-renders the block, so
-an org policy field is never dropped by a later review run.
-
-## Auto-fix scope
-
-`--fix` is conservative by design. It applies fixes when **all** of these hold:
-
-- The finding is marked `auto-fixable: yes`
-- The fix does not change function signatures, return types, or schema
-- The fix does not change observable HTTP status codes, error messages, or
-  log formats
-- The fix does not delete tests
-- The fix is contained to files already in the review scope
-
-When in doubt, leave the finding unfixed and let the user apply the
-`Suggested fix` manually.
-
-## Output
-
-Stdout summary (always), followed by the path to `review.md`:
-
-```text
-/papur:review — 042-example-feature
-
-  security    ✓ 0 MUST   2 SHOULD
-  reuse       ✓ 0 MUST   1 SHOULD
-  quality     ✓ 0 MUST   0 SHOULD   (2 low-confidence)
-  efficiency  ✓ 0 MUST   0 SHOULD
-  simplicity  ✓ 0 MUST   0 SHOULD
-
-  captured    1 issue logged during work — run /papur:groom to route
-  blocking: no
-  report:   specs/042-example-feature/review.md
-```
-
-The `captured` line is omitted when no issues were appended to the inbox in the
-review window. It is informational and never affects the exit code.
-
-When MUST violations are present:
-
-```text
-/papur:review — 042-example-feature
-
-  security    ✗ 2 MUST   1 SHOULD
-  reuse       ✓ 0 MUST   0 SHOULD
-  quality     ✗ 1 MUST   0 SHOULD
-  efficiency  ✓ 0 MUST   0 SHOULD
-  simplicity  ✓ 0 MUST   0 SHOULD
-
-  blocking: yes — 3 MUST violations
-  report:   specs/042-example-feature/review.md
-
-  spec cannot advance to done. Resolve violations and re-run /papur:review,
-  or run /papur:review --waive <rule-id> --reason "..." for each waivable finding.
-```
-
-Exit code: `0` when not blocking, `1` when blocking. Allows CI to gate on the
-exit code without parsing the report.
-
-## Idempotency
-
-Re-running `/papur:review` against an unchanged target reproduces an identical
-`review.md` (modulo `reviewed-at` and `reviewed-against`). This is a
-derive-don't-ask invariant: review output is a function of code + rules,
-never of session state.
-
-## Notes for adopters
-
-- Projects that customize shipped rule files (e.g.,
-  `specs/rules/security-backend.md`) pin them in `.ductus/config.toml`
-  `[pinned] files` to prevent `/ductus` from overwriting their additions.
-  `/papur:review` reads whatever is on disk — pinned or not.
-- Files inside the rule-file directory (`specs/rules/` in adopter
-  projects; `framework/rules/` in ductus's own repo) are auto-discovered
-  by directory walk (see step 2, `discover-rule-files`). No `AGENTS.md` reference is
-  required. Adding a new file at `specs/rules/<domain>-{backend,frontend,cross}.md`
-  with a recognized suffix is the only step needed; the suffix selects
-  which stacks load it.
-- The `AGENTS.md` rule-file reference survives strictly for adopter-local
-  rule files placed **outside** `specs/rules/` — e.g.,
-  `docs/rules/internal-api.md`. The framework cannot directory-walk
-  arbitrary adopter paths, so an explicit `AGENTS.md` reference is the
-  discovery signal for these files.
-- A rule file with an unrecognized suffix loads for every stack and
-  emits a one-line stdout warning (see step 2, `discover-rule-files`). The default
-  is "load + warn," never "silent skip." Rename to one of the closed
-  suffixes — `-backend.md`, `-frontend.md`, `-cross.md` — to silence
-  the warning.
-- A rule file can be explicitly excluded from a given project's review
-  via `.ductus/config.toml` `[[review.disabled-rule-files]]` (see
-  [Inputs](#inputs) for the schema and step 2 (`discover-rule-files`) for the
-  filter behavior). The override is project-wide and requires a
-  mandatory `reason` — the reason is the audit trail. Use this when
-  the stack-derived selection is correct (the rule file applies) but
-  the team is not yet ready to enforce that file's rules (e.g., an
-  internal admin UI that has not adopted full WCAG AA). Waivers
-  remain the right tool for individual `(rule, file)` exceptions; the
-  opt-out is for whole-file deferrals.
-- The five-dimension model is fixed. Domain-specific concerns (accessibility,
-  i18n, licensing) belong in additional rule files, not new passes.
+<!-- audit:ignore-promotion -->
+12. Re-read the run's fixes, round by round (host responsibility; the walk and its policy are **§Fix-round loop** in `.ductus/reference/review.md`). From step 10's base, repeat: call the brief-re-read primitive with the feature and the round's base. When it reports `re-reads-off`, print the reason whatever the round's kind, record the round unless it is `empty`, and stop. On `empty`, stop. On `exempt`, record the round and take its `snapshot` as the next base. On `re-read`, hand an independent agent the returned `brief` path and nothing else — a host that cannot start one prints the path for the operator to run in a fresh session — then call the read-re-read primitive with the same base: only a `complete` result is a re-read. Fix each MUST and SHOULD it found; when the fixes apply only its prescribed edits, call the check-prescriptions primitive with that base, and on `matched` record the next round as diff-checked, with its `snapshot` as the base; any other change or verdict re-reads the round from the re-read's `snapshot`. A failed call or an unfinished re-read leaves its round not re-read, as does a round the operator declines to have re-read, with the reason they give. Disposition each NOTE as an observation. When a brief-re-read result's `re-reads-with-findings` reaches step 10's `budget`, hand its brief to no agent without the operator's decision: report the open findings and quote that result's `rounds`, `re-reads-with-findings` and `elapsed-seconds` (or its `elapsed-absent-reason` when that is null), which the runtime counts, never the host. Then invoke write-review once more with step 11's arguments but for `loop-open`, whose absence clears the mark, the loop's NOTEs and any finding left open at a stop added to its observations, plus `fix-rounds`, one entry per round in order, each with its result's `excluded` list. Under `ductus exec` the walker no-ops this step and step 10, so there is no round and the record carries no loop field.

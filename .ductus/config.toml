@@ -1,5 +1,5 @@
 [migrations]
-last_applied = "generator-primitives"
+last_applied = "substitute-seed-placeholders"
 
 [project]
 name = "papur"

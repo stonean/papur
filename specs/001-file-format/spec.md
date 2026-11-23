@@ -1,13 +1,6 @@
 ---
 status: done
 dependencies: []
-review:
-  last-run: 2026-06-30T00:33:17Z
-  reviewed-against: 6bf77a5057fd45f26ab4d5325c4cfa65dee5b986
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 next-criterion: 9
 ---
 

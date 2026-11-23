@@ -1,155 +1,209 @@
 # API Contract Rules — Backend
 
-Enforceable rules for the shape, stability, and documentation of HTTP and RPC APIs. These rules apply to any project that exposes a programmatic interface (REST, JSON-RPC, gRPC, GraphQL) to clients outside its own process.
-
-These rules cover **contract quality**, not security. For HTTP-surface security concerns (security headers, CORS, rate limits, method allowlisting, content-type validation, webhook signing, network exposure) see `security-backend.md` §BE-API.
-
-Rules use RFC 2119 language: **MUST** / **MUST NOT** are enforced by the validate command (errors); **SHOULD** / **SHOULD NOT** are flagged as warnings.
-
-Rule IDs follow the format `BE-{CATEGORY}-{NNN}` and are permanent — once assigned, an ID is never renumbered, even if the rule is moved within the file or deprecated. Categories: `SCHEMA` (schema publication and source-of-truth), `APIVER` (versioning and deprecation), `ERRENV` (error response envelope), `STATUS` (HTTP status code discipline), `PAGE` (pagination), `IDEMP` (idempotency), `COMPAT` (backwards compatibility). See `specs/008-security-rules/data-model.md` for the full schema.
-
-Projects without a programmatic API can pin this file in `.ductus/config.toml` to skip it during `ductus` updates.
+Contract-quality rules — the shape, stability, and documentation of HTTP and RPC APIs — for any project that exposes a programmatic interface (REST, JSON-RPC, gRPC, GraphQL) to clients outside its own process; HTTP-surface security (security headers, CORS, rate limits, method allowlisting, content-type validation, webhook signing, network exposure) is `security-backend.md` §BE-API — API Security. A rule phrased in HTTP methods, status codes, or headers applies to them as HTTP defines them, and reaches an RPC protocol carried over HTTP — gRPC (every call an HTTP/2 `POST`), GraphQL, JSON-RPC — only as far as its own text says (`BE-APIVER-001`, `BE-APIVER-002`, `BE-STATUS-001`, `BE-IDEMP-001`, `BE-COND-001`). The `ERRENV` rules govern a resource-oriented HTTP API alone: for them an RPC protocol carried over HTTP is an API that is not an HTTP API, whose errors are `security-backend.md` `BE-ERR-002`'s and `BE-ERR-004`'s. These rules verify **design-time commitments** — what a spec, plan, `specs/system.md` or `specs/errors.md` must state — rather than code patterns; `/papur:analyze` enforces them against feature artifacts. A rule is **MUST** only when its absence lets a client relying on the contract fail silently or corrupts data — a silent breaking change, a repeated side effect, a lost update, an item skipped or repeated, a value read wrong — and **SHOULD** where an alternative serves the same purpose or a departure is inconsistent rather than incorrect. Rule IDs follow the format `BE-{CATEGORY}-{NNN}`. Categories: `SCHEMA` (schema publication and source-of-truth), `APIVER` (versioning and deprecation), `ERRENV` (error response envelope of a resource-oriented HTTP API), `STATUS` (HTTP status code discipline), `PAGE` (pagination), `IDEMP` (idempotency), `COMPAT` (backwards compatibility), `PATCH` (partial updates), `COND` (conditional requests), `LRO` (long-running operations), `REPR` (representation conventions). Severity, ID permanence, and how review selects or excludes this file follow constitution §rules.
 
 ## BE-SCHEMA — Schema Publication
 
 ### BE-SCHEMA-001
 
-> Every public HTTP or RPC API MUST publish a machine-readable schema describing every endpoint, request shape, response shape, and error: OpenAPI 3.x for REST, `.proto` files for gRPC, GraphQL SDL for GraphQL, JSON Schema for JSON-RPC. The schema MUST be served from a documented URL on the same origin as the API (e.g., `/openapi.json`, `/schema.graphql`) AND committed to the repository.
+> Every public HTTP or RPC API MUST publish a machine-readable schema describing every endpoint, request shape and response shape, and each error the schema format can express: OpenAPI 3.x for REST, `.proto` files for gRPC, the GraphQL type system definition language (SDL) for GraphQL, an OpenRPC document (JSON Schema–based) for JSON-RPC. The schema MUST be served by the API itself — from a documented URL on the API's own origin or, for gRPC and JSON-RPC, through the protocol's own discovery mechanism, gRPC server reflection listing every method the API serves or the OpenRPC `rpc.discover` method — AND committed to the repository.
 
-**Rationale:** A machine-readable schema is the single source of truth that client SDKs, mock servers, contract tests, and human documentation all derive from. Without it, every consumer reverse-engineers the API independently and integration breaks accumulate silently. Serving it from the API origin makes discovery automatic.
+**Verification:** Any spec or plan that introduces a public HTTP/RPC endpoint MUST name the schema artifact path AND how the API serves the schema: the URL, or the discovery mechanism. `/papur:analyze` flags endpoint specs that omit the schema commitment or serve the schema from anywhere but the API itself, and flags the absence of a schema file at the named path. **Not flagged:** a GraphQL API that serves its SDL from a documented URL with introspection disabled in production; introspection enabled in production is `BE-INPUT-014`'s, which does not reach gRPC server reflection.
 
-**Verification:** Any spec or plan that introduces a public HTTP/RPC endpoint MUST name the schema artifact path AND the URL it is served from. Validate flags endpoint specs that omit the schema commitment, and flags the absence of a schema file at the named path.
-
-**Source:** OpenAPI Specification, gRPC IDL conventions, GraphQL Spec §3, JSON Schema
+**Source:** OpenAPI Specification; gRPC documentation, *Introduction to gRPC* and *GRPC Server Reflection Protocol* (`doc/server-reflection.md`); GraphQL Specification (September 2025) §3 (Type System); OpenRPC Specification (*Service Discovery Method*); OpenAPI Initiative best practices (*Make the OpenAPI Descriptions Available to the Users*, *Add OpenAPI Descriptions to Source Control*)
 
 ### BE-SCHEMA-002
 
-> The published schema MUST be generated from the same code or annotations that implement the endpoints — not maintained as a parallel document. Acceptable generation sources include typed handler signatures and decorators (FastAPI, NestJS, ASP.NET, Spring), explicit `.proto`/SDL files that the server is built against, or build-time extraction from a typed routing layer. Hand-written schema files that the implementation does not derive from MUST NOT be used.
+> The published schema and the implementation MUST derive from a single source of truth. Either the schema is generated from the code or annotations that implement the endpoints, or the implementation is bound to a design-first schema: generated from it, compiled against it (`.proto`, GraphQL SDL), or validated against it on every request and response or by contract tests. A hand-written schema that the implementation neither derives from nor is checked against MUST NOT be used.
 
-**Rationale:** Parallel schemas drift the moment a parameter is renamed, an optional field is made required, or a status code is added — and the drift is silent because the schema never executes. Code-derived schemas fail loudly at build time when implementation and contract diverge, and they make the schema as trustworthy as the code itself.
+**Verification:** Any spec or plan that introduces or modifies an API endpoint MUST name the schema's single source — a code-derived generation step in the build, or the design-first schema the implementation is bound to. `/papur:analyze` flags plans that propose a hand-maintained schema bound to the implementation by none of the Statement's means, and affected-files snippets where a generated schema is edited by hand, independently of the code it is generated from.
 
-**Verification:** Any spec or plan that introduces or modifies an API endpoint MUST commit to a code-derived schema generation step in the build. Validate flags plans that propose hand-maintained schema files, and flags affected-files snippets where the schema and the endpoint annotations are edited independently of each other.
-
-**Source:** OpenAPI Initiative best practices, "API-first" design literature
+**Source:** OpenAPI Initiative best practices (*Use a Design-First Approach*, *Keep a Single Source of Truth*); gRPC documentation, *Introduction to gRPC*; GraphQL Specification (September 2025) §3 (Type System)
 
 ### BE-SCHEMA-003
 
-> The build MUST fail when the regenerated schema differs from the committed schema. The check MUST run in CI on every pull request.
+> The committed schema MUST match the schema the implementation produces. A change that alters the implementation's contract MUST carry the regenerated schema in the same change, and an implementation whose committed schema diverges from what it would regenerate MUST NOT ship. In a design-first build (`BE-SCHEMA-002`), where the committed schema is the source and nothing regenerates it, an implementation that diverges from the committed schema MUST NOT ship.
 
-**Rationale:** Without an enforcing check, generated schemas drift the moment a developer skips the regeneration step. A CI gate makes the regeneration step impossible to skip and turns schema drift into a build failure instead of a production discovery.
+**Verification:** Any spec or plan that introduces or modifies an API endpoint, in a project that publishes an API schema under `BE-SCHEMA-001`, MUST commit to updating the committed schema in the same change (or, design-first, to keeping the implementation bound to it) and MUST name how divergence is detected before the change ships. `/papur:analyze` flags API specs that change the contract without committing to an updated schema, and plans whose affected files change the implementation's contract but not the schema. **Not flagged:** any detection the project chooses, such as a CI job, a pre-commit hook, or a release script; a check not automated to run on every change is `BE-SCHEMA-004`'s.
 
-**Verification:** Any spec or plan covering API endpoints OR CI/build configuration MUST commit to a `schema regenerate && diff --exit-code` step in the CI pipeline. Validate flags CI specs that omit the schema-diff check, and flags API specs that omit the CI-gate commitment.
+**Source:** OpenAPI Initiative best practices (*Add OpenAPI Descriptions to Source Control*, *Keep a Single Source of Truth*)
 
-**Source:** OpenAPI Initiative governance guides
+### BE-SCHEMA-004
+
+> The schema-match check of `BE-SCHEMA-003` SHOULD be automated to run on every change proposed for or pushed to the integration branch and to fail that change on divergence — a schema regeneration followed by a diff that exits non-zero on any difference, or, in a design-first build, the step that regenerates server code from the schema, compiles against it, or runs the contract tests.
+
+**Verification:** Any spec or plan covering build or CI configuration, in a project that publishes an API schema under `BE-SCHEMA-001`, SHOULD include an automated schema-drift check. `/papur:analyze` emits a warning when such a spec omits it. Where the check runs, such as CI, a pre-commit hook, or a merge queue, is the project's choice.
+
+**Source:** OpenAPI Initiative best practices (*Add OpenAPI Descriptions to Source Control*, *Keep a Single Source of Truth*)
 
 ## BE-APIVER — Versioning and Deprecation
 
 ### BE-APIVER-001
 
-> Every public API MUST declare its versioning strategy explicitly: URI path versioning (`/v1/`, `/v2/`), media-type versioning (`Accept: application/vnd.app.v2+json`), or header versioning (`API-Version: 2`). The strategy MUST be documented in `specs/system.md` and applied consistently across all endpoints of the API.
+> Every public API MUST declare its versioning strategy explicitly, such as URI path versioning (`/v1/`, `/v2/`), query-parameter versioning (`?api-version=2024-10-01`), header versioning (`API-Version: 2`), for gRPC a major version at the end of the protobuf package (`acme.billing.v1`), or a versionless API. The strategy MUST be documented in `specs/system.md` and applied consistently across all endpoints of the API. A versionless declaration MUST commit to making none of the changes `BE-COMPAT-001` lists as breaking for as long as the API stays versionless.
 
-**Rationale:** Without a declared strategy, breaking changes have no migration path — every consumer breaks simultaneously when an endpoint changes. A declared strategy lets old and new versions coexist while consumers migrate at their own pace.
+**Verification:** Any spec or plan that introduces a public API MUST name the versioning strategy, a versionless one included, and reference its declaration in `specs/system.md`. `/papur:analyze` flags public-API specs that omit the strategy commitment, inconsistencies where some endpoints version one way and others a different way, and a versionless declaration that does not commit to making none of `BE-COMPAT-001`'s breaking changes.
 
-**Verification:** Any spec or plan that introduces a public API MUST name the versioning strategy and reference its declaration in `specs/system.md`. Validate flags public-API specs that omit the strategy commitment, and flags inconsistencies where some endpoints version one way and others a different way.
-
-**Source:** Microsoft REST API Guidelines, Google Cloud API Design Guide
+**Source:** Microsoft Azure REST API Guidelines (*API Versioning*), Google AIP-185 (API Versioning), graphql.org *Schema Design* (*Versioning*)
 
 ### BE-APIVER-002
 
-> Deprecated endpoints MUST emit the `Deprecation` and `Sunset` HTTP response headers (RFC 8594, RFC 9745). `Sunset` MUST carry a future date past which the endpoint will be removed; `Deprecation` MUST carry the date the deprecation was announced. The corresponding schema definition MUST mark the operation deprecated.
+> Deprecated endpoints MUST emit the `Deprecation` (RFC 9745) and `Sunset` (RFC 8594) HTTP response headers, except that a deprecated endpoint of an API declared versionless under `BE-APIVER-001`, which stays served (`BE-COMPAT-001`), MUST NOT emit `Sunset`. `Deprecation` MUST carry the date the endpoint is or was deprecated, as a Structured Field Date (`Deprecation: @1735689600`). `Sunset` MUST carry, as an HTTP-date, the date past which the endpoint will be removed, and MUST NOT be earlier than the `Deprecation` date; a date already past means the endpoint may be removed at any time. The corresponding schema definition MUST mark the operation deprecated (OpenAPI `deprecated: true` on the operation, GraphQL `@deprecated` on the field, protobuf `option deprecated = true` on the method, OpenRPC `deprecated: true` on the method). A deprecated gRPC method MUST send the headers this rule requires of it as custom response metadata, named `deprecation` and `sunset` since gRPC metadata names are lowercase, which gRPC carries in its HTTP/2 response headers. A deprecated GraphQL root field served from an endpoint that is not itself deprecated MAY carry the schema mark alone.
 
-**Rationale:** Consumers cannot plan migrations they do not know about. Emitting the headers on every response from a deprecated endpoint guarantees visibility in client logs, monitoring dashboards, and integration tests. The schema annotation makes generated client SDKs surface the deprecation at compile time.
+**Verification:** Any spec or plan that removes or deprecates an endpoint MUST commit to the `Deprecation` and `Sunset` headers, with concrete dates in the formats the Statement names, and the schema mark, a deprecated gRPC method sending the headers as its response metadata; one that deprecates an endpoint of a versionless API commits to `Deprecation` and the mark and to no `Sunset`, and one that deprecates a GraphQL root field on an endpoint that stays may commit to the mark alone. `/papur:analyze` flags deprecation specs that omit a required commitment, a `Sunset` date earlier than the `Deprecation` date, and a `Sunset` on a versionless API's endpoint.
 
-**Verification:** Any spec or plan that removes or deprecates an endpoint MUST commit to (a) `Deprecation` + `Sunset` headers with concrete dates, and (b) the schema-level deprecation annotation. Validate flags deprecation specs that omit either commitment.
-
-**Source:** RFC 8594, RFC 9745, OpenAPI Specification
+**Source:** RFC 8594 §1.4 and §3; RFC 9745 §2.1, §2.2, and §4; RFC 9651 §3.3.7; RFC 9110 §5.6.7; OpenAPI Specification (Operation Object `deprecated`); GraphQL Specification (September 2025) §3.13.3; Protocol Buffers `descriptor.proto` (`MethodOptions.deprecated`); OpenRPC Specification (Method Object `deprecated`); gRPC *gRPC over HTTP2* (`doc/PROTOCOL-HTTP2.md`: Response-Headers, Custom-Metadata, Header-Name)
 
 ## BE-ERRENV — Error Response Envelope
 
 ### BE-ERRENV-001
 
-> Error responses from HTTP APIs MUST use a single documented envelope shape across all endpoints. The default SHOULD be RFC 9457 `application/problem+json` (with at least `type`, `title`, `status`, `detail` fields). A project-specific envelope is acceptable when documented in `specs/system.md` and used uniformly.
+> Error responses from a resource-oriented HTTP API MUST use a single documented envelope shape across all endpoints.
 
-**Rationale:** Without a uniform shape, every consumer writes per-endpoint error parsing — and gets it wrong for endpoints added later. A single shape lets clients write one error handler that works everywhere, and lets the API evolve error categories without breaking consumers. The security properties of the same envelope — no internal detail in production, a correlation ID surfaced to the client — are governed by `security-backend.md` §BE-ERR (`BE-ERR-001`, `BE-ERR-002`); this rule and `BE-ERRENV-002` ductus its contract shape and code stability.
+**Verification:** Any spec or plan that introduces an endpoint of a resource-oriented HTTP API, or describes the error responses of one, MUST commit to the project's error envelope shape and reference its definition in `specs/errors.md`. `/papur:analyze` flags endpoint specs that describe ad-hoc error formats (per-endpoint shapes, mixed error types, naked strings) without naming the project envelope. This rule and `BE-ERRENV-002` govern the envelope's contract shape and code stability: internal detail in a production error response is `BE-ERR-001`'s, a sensitive configuration value in any error response `configuration-cross.md` `CFG-ENV-006`'s, and a missing request correlation ID `BE-ERR-002`'s. A failed long-running operation that a success response from its status monitor reports outside the project envelope is `BE-LRO-001`'s.
 
-**Verification:** Any spec or plan that introduces an HTTP API endpoint MUST commit to the project's error envelope shape and reference its definition in `specs/system.md`. Validate flags endpoint specs that describe ad-hoc error formats (per-endpoint shapes, mixed error types, naked strings) without naming the project envelope.
-
-**Source:** RFC 9457 (Problem Details for HTTP APIs, obsoletes RFC 7807), Google Cloud API Design Guide §error-model
+**Source:** RFC 9457 (Problem Details for HTTP APIs, obsoletes RFC 7807), Google AIP-193 (Errors)
 
 ### BE-ERRENV-002
 
-> The error envelope MUST include a machine-readable, stable error code distinct from the HTTP status code (e.g., `code: "USER_NOT_FOUND"`, `code: "PAYMENT_DECLINED_INSUFFICIENT_FUNDS"`). Error codes MUST be documented in the schema, MUST be stable across versions, and MUST NOT be derived from or parsed out of the human-readable message.
+> The error envelope of a resource-oriented HTTP API MUST include a machine-readable, stable error code distinct from the HTTP status code (e.g., `code: "USER_NOT_FOUND"`, or an RFC 9457 `type` URI other than `about:blank`). Error codes MUST be documented in the schema, MUST be stable across versions, and MUST NOT be derived from or parsed out of the human-readable message.
 
-**Rationale:** HTTP status codes are coarse — `400` covers thousands of failure modes. Stable error codes let clients write conditional logic ("retry on `RATE_LIMITED`, surface to user on `VALIDATION_FAILED`") that survives message rewording and localization. Deriving codes from messages couples the two and breaks clients when copy is edited.
+**Verification:** Any spec or plan that introduces an endpoint of a resource-oriented HTTP API, or describes the error responses of one, `specs/errors.md`'s envelope definition included, MUST commit to an envelope code member whose values are distinct from the HTTP status code and to documented error codes for each named failure mode, with the code values declared in the schema. `/papur:analyze` flags endpoint specs that describe errors only by HTTP status or only by message text without a stable code, and endpoint-modifying specs that change an existing code's value or meaning, a renamed one included, whatever the version. An error response outside the project envelope, a naked string included, is `BE-ERRENV-001`'s; a code missing from a response inside the envelope, or from the envelope's definition, stays this rule's. A failed long-running operation that a success response from its status monitor reports outside the project envelope is `BE-LRO-001`'s; the codes of one it reports inside the envelope stay this rule's.
 
-**Verification:** Any spec or plan that introduces an HTTP API endpoint MUST commit to documented error codes for each named failure mode, with the code values declared in the schema. Validate flags endpoint specs that describe errors only by HTTP status or only by message text without a stable code.
+**Source:** Stripe API error documentation, RFC 9457 §3.1.1 and §4, Google AIP-193
 
-**Source:** Stripe API error documentation, Google Cloud API Design Guide
+### BE-ERRENV-003
+
+> The error envelope of a resource-oriented HTTP API SHOULD be RFC 9457 `application/problem+json`, with at least the `type`, `title`, `status`, and `detail` fields. A project-specific envelope is acceptable when it is documented in `specs/errors.md` and used uniformly.
+
+**Verification:** Any spec or plan that defines the project's error envelope, `specs/errors.md`'s envelope definition included, SHOULD commit to RFC 9457 `application/problem+json` with at least its `type`, `title`, `status`, and `detail` fields, or name the project-specific envelope documented in `specs/errors.md` that replaces it, which `specs/errors.md` does by defining that envelope. `/papur:analyze` emits a warning when an envelope definition is neither, an RFC 9457 envelope missing one of those fields included. **Not flagged:** a project-specific envelope defined outside `specs/errors.md`, which `BE-ERRENV-001` owns.
+
+**Source:** RFC 9457 (Problem Details for HTTP APIs, obsoletes RFC 7807)
 
 ## BE-STATUS — HTTP Status Code Discipline
 
 ### BE-STATUS-001
 
-> HTTP status codes MUST be used with their RFC 9110 semantics. Required mappings: `200` successful retrieval, `201` resource creation (with `Location` header naming the new resource), `202` accepted-but-not-yet-processed, `204` successful no-content, `400` malformed request, `401` missing/invalid authentication, `403` authenticated-but-not-authorized, `404` resource-not-found, `409` conflict, `410` permanently-removed, `422` well-formed-but-semantically-invalid input, `429` rate-limited, `500` unexpected server error, `503` unavailable-with-retry. Endpoints MUST NOT collapse multiple outcomes into `200` with an `error` field in the body.
+> HTTP APIs MUST use status codes with their registered semantics — RFC 9110, plus RFC 6585 for `429`. Required mappings: `200` successful retrieval, `201` resource creation (with a `Location` header naming the new resource unless it is the target URI), `202` accepted-but-not-yet-processed, `204` successful no-content, `400` malformed request, `401` missing/invalid authentication (with the `WWW-Authenticate` challenge RFC 9110 requires), `403` authenticated-but-not-authorized (or `404` where the resource's existence must not be revealed, per `BE-AUTHZ-006`), `404` resource-not-found, `409` conflict, `410` permanently-removed, `422` well-formed-but-semantically-invalid input, `429` rate-limited, `500` unexpected server error, `503` unavailable-with-retry. Endpoints MUST NOT collapse multiple outcomes into `200` with an `error` field in the body. RPC protocols carried over HTTP MAY instead signal errors as their own specifications define — GraphQL per the GraphQL over HTTP working draft, JSON-RPC through its error object, gRPC through `grpc-status`.
 
-**Rationale:** HTTP intermediaries — load balancers, caches, retry middleware, monitoring, on-call alerting — all act on status codes. An endpoint that returns `200` with an `error` field bypasses every layer of the HTTP-aware stack and forces every consumer (and operator) to parse the body to know what happened. Correct status codes let off-the-shelf infrastructure do its job.
+**Verification:** Any spec or plan that introduces an HTTP endpoint MUST name the success status code AND each failure status code mapped to its failure mode — or, for an RPC protocol carried over HTTP, the error its protocol signals for each failure mode. `/papur:analyze` flags endpoint specs that describe errors via `200 OK` with an `error` field, that conflate `401` and `403`, that describe a `401` without a `WWW-Authenticate` challenge, or that omit the status-code mapping. **Not flagged:** a status monitor that answers `200` while reporting a failed long-running operation's state, a successful retrieval whose shape `BE-LRO-001` governs.
 
-**Verification:** Any spec or plan that introduces an endpoint MUST name the success status code AND each failure status code mapped to its failure mode. Validate flags endpoint specs that describe errors via `200 OK` with an `error` field, that conflate `401` and `403`, or that omit the status-code mapping.
-
-**Source:** RFC 9110 §15, Microsoft REST API Guidelines
+**Source:** RFC 9110 §15 (§15.5.2 for `401`, §15.5.4 for hiding existence behind `404`), RFC 6585 §4, Microsoft Azure REST API Guidelines (*HTTP Return Codes*), GraphQL over HTTP (working draft), JSON-RPC 2.0 Specification (5.1 Error object), gRPC *gRPC over HTTP2* (`doc/PROTOCOL-HTTP2.md`: `:method POST`, `:status 200`, `grpc-status` in trailers)
 
 ## BE-PAGE — Pagination
 
 ### BE-PAGE-001
 
-> List endpoints that can return more than a small fixed maximum number of items MUST paginate. The pagination strategy MUST be documented per endpoint and SHOULD default to cursor-based pagination (opaque continuation tokens) for any collection that supports concurrent inserts or deletes. Offset-based pagination MAY be used only for static or append-only-at-tail collections.
+> List endpoints that can return more than a small fixed maximum number of items MUST paginate, with a default and a maximum page size. The pagination strategy MUST be documented per endpoint.
 
-**Rationale:** Unpaginated list endpoints are a DoS vector (large responses, slow queries) and an OOM-on-client risk. Offset pagination loses items when new rows arrive between page reads, and shows duplicates when rows are deleted; cursor pagination is stable under concurrent writes. Defaulting to cursors forces the safe choice without per-endpoint debate.
-
-**Verification:** Any spec or plan that introduces a list endpoint MUST commit to a pagination strategy, a default page size, and a maximum page size — all as named constants per `CFG-CONST-003`. Validate flags list-endpoint specs that omit pagination or that propose offset pagination on collections that accept concurrent inserts.
+**Verification:** Any spec or plan that introduces a list endpoint MUST commit to a pagination strategy, a default page size, and a maximum page size, with both sizes as named constants per `CFG-CONST-003`. `/papur:analyze` flags list-endpoint specs that omit pagination or leave the strategy unnamed.
 
 **Source:** Stripe API pagination, GraphQL Cursor Connections Specification
 
 ### BE-PAGE-002
 
-> Paginated responses MUST include an envelope distinguishing the page from the items, with an explicit continuation field: e.g., `{"data": [...], "next_cursor": "..." | null, "has_more": true | false}`. The presence of more pages MUST be expressed by a dedicated field — not inferred from a full-page item count.
+> Paginated responses MUST include an envelope distinguishing the page from the items, with an explicit continuation field. The presence of more pages MUST be expressed by a dedicated field — not inferred from a full-page item count.
 
-**Rationale:** Inferring "more pages exist when `len(items) == page_size`" is wrong at the exact boundary where the total happens to equal the page size — the client requests an empty page on the next call. A dedicated `has_more` (or non-null `next_cursor`) makes the boundary unambiguous and saves one round trip.
-
-**Verification:** Any spec or plan that introduces a paginated endpoint MUST name the response envelope including the page-continuation field. Validate flags paginated-endpoint specs that infer continuation from item count or that omit a continuation field.
+**Verification:** Any spec or plan that introduces a paginated endpoint MUST name the response envelope including the page-continuation field. `/papur:analyze` flags paginated-endpoint specs that infer continuation from item count or that omit a continuation field. **Not flagged:** a continuation field such as `has_more`, or a `next_cursor` that is null on the last page.
 
 **Source:** Stripe API pagination, GraphQL Cursor Connections Specification
+
+### BE-PAGE-003
+
+> Pagination MUST be cursor-based (continuation tokens the client treats as opaque) for any collection that supports concurrent inserts or deletes. Offset-based pagination MAY be used only for static or append-only-at-tail collections.
+
+**Verification:** Any spec or plan that introduces a list endpoint over a collection that accepts concurrent inserts or deletes MUST commit to cursor-based pagination; `/papur:analyze` flags such a spec that proposes offset pagination. **Not flagged:** offset pagination over a static or append-only-at-tail collection, which the Statement permits.
+
+**Source:** Stripe API pagination, GraphQL Cursor Connections Specification, Microsoft Azure REST API Guidelines (*Collections*)
+
+### BE-PAGE-004
+
+> Paginated list endpoints MUST return items in a deterministic total order: a documented sort whose final key is unique (e.g., `created_at, id`), applied identically on every page.
+
+**Verification:** Any spec or plan that introduces a paginated endpoint MUST name its sort order, ending in a unique key. `/papur:analyze` flags paginated-endpoint specs that leave the order unstated or that sort only on a non-unique column (a timestamp, a name, a status).
+
+**Source:** PostgreSQL documentation, *LIMIT and OFFSET*; GraphQL Cursor Connections Specification; Microsoft Azure REST API Guidelines (*Considerations for sorting with pagination*)
 
 ## BE-IDEMP — Idempotency
 
 ### BE-IDEMP-001
 
-> Endpoints that create resources or trigger side-effecting state changes via `POST` MUST accept an `Idempotency-Key` request header. The server MUST persist key→response mappings for at least 24 hours and return the cached response on retry with the same key (matching auth principal, matching request body hash). Retries that present the same key with a divergent body MUST return `409 Conflict`.
+> Endpoints that create resources or trigger side-effecting state changes via `POST`, or via a `PATCH` whose patch is not idempotent (e.g., a JSON Patch `add` to an array), MUST accept an `Idempotency-Key` request header. The server MUST persist key→response mappings for at least 24 hours and return the cached response on retry with the same key (matching auth principal, matching request body hash). A request that reuses a key with a different body MUST be rejected with `422 Unprocessable Content`, and a retry that arrives while the original request is still in flight MUST be rejected with `409 Conflict`. A side-effecting call of an RPC protocol carried over HTTP — a gRPC method, a GraphQL mutation, a JSON-RPC method — counts as a `POST` under this rule; it MAY carry the key in a request field instead of the header (e.g., `request_id` per AIP-155) and MAY signal the two rejections through its protocol's error channel, as `BE-STATUS-001` permits.
 
-**Rationale:** Networks fail mid-request. Without idempotency, a client that did not receive a response cannot safely retry — every retry risks a duplicate side effect (double-charge, double-send, duplicate order). The Stripe-pioneered `Idempotency-Key` pattern makes safe retry possible and is now the industry-standard contract for side-effecting endpoints.
+**Verification:** Any spec or plan that introduces a side-effecting `POST` endpoint — including a side-effecting RPC method carried over HTTP — or a `PATCH` endpoint whose patch is not idempotent, MUST commit to the Statement's key carrier, persistence window, and two rejection responses. `/papur:analyze` flags such specs that omit idempotency support or either response, and persistence windows shorter than the documented client retry policy.
 
-**Verification:** Any spec or plan that introduces a side-effecting `POST` endpoint MUST commit to `Idempotency-Key` support, the persistence window, and the divergent-body behavior. Validate flags side-effecting-POST specs that omit idempotency support, and flags persistence windows that are shorter than the documented client retry policy.
-
-**Source:** Stripe API idempotency documentation, IETF draft-ietf-httpapi-idempotency-key-header
+**Source:** Stripe API idempotency documentation (API v1); IETF draft-ietf-httpapi-idempotency-key-header-08 §2.4, §2.6–§2.7, §4, and §5 (an Internet-Draft, cited as work in progress); Google AIP-155 (Request identification); RFC 5789 §2; RFC 6902 §4.1
 
 ### BE-IDEMP-002
 
-> `PUT` and `DELETE` operations MUST be idempotent in the HTTP sense: repeated identical requests MUST produce the same observable resource state and the same response (or a `404` on a `DELETE` retry once the resource is gone). Per-call side effects (counter increments, notification sends, audit-log entries) MUST NOT be emitted on `PUT`/`DELETE` retries.
+> `PUT` and `DELETE` operations MUST be idempotent in the HTTP sense: repeated identical requests MUST have the same intended effect on the resource as a single request. The response MAY differ between attempts (`201` then `200` for a `PUT` that creates, `204` then `404` or `410` for a `DELETE` retried once the resource is gone). Beyond HTTP's idempotency, which leaves a server free to implement other side effects for each request, business side effects of the change (counter increments, notification sends, charges, outbound events) MUST NOT be repeated on `PUT`/`DELETE` retries; per-request logging and revision history MAY still record every attempt.
 
-**Rationale:** Idempotency on `PUT`/`DELETE` is a contract of the HTTP method per RFC 9110 §9.2.2. Intermediate proxies, retry middleware, and clients all assume it. Per-call side effects break the contract and produce confusing duplicate-notification incidents.
+**Verification:** Any spec or plan that introduces a `PUT` or `DELETE` endpoint MUST commit to operation idempotency, including deduplication of business side effects on retries. `/papur:analyze` flags `PUT`/`DELETE` specs that describe per-call counter increments, notification sends, charges, or outbound events without dedup. **Not flagged:** per-request logging, including the audit logging `security-backend.md` §BE-LOG — Logging and Audit requires, and revision history.
 
-**Verification:** Any spec or plan that introduces a `PUT` or `DELETE` endpoint MUST commit to operation idempotency including side-effect deduplication for retries. Validate flags `PUT`/`DELETE` specs that describe per-call counter increments, notification sends, or audit-row inserts without dedup.
-
-**Source:** RFC 9110 §9.2.2
+**Source:** RFC 9110 §9.2.2, §9.3.4, §9.3.5, §15.5.5
 
 ## BE-COMPAT — Backwards Compatibility
 
 ### BE-COMPAT-001
 
-> Within a major version, schema changes MUST be additive only. Removing a field, renaming a field, narrowing a type (`string` → `enum`), making an optional field required, or adding a required request field MUST NOT happen without a major version bump. Adding new optional request fields, new response fields, new enum values for response-only fields, and new endpoints is permitted.
+> Within a major version, schema changes MUST be additive only. Removing or renaming a field, changing a field's type (including narrowing, e.g. `string` → `enum`), changing a default value, adding a required request field or making an optional request field required, ceasing to populate a response field the server previously populated, or adding a value to a response enum the schema does not document as open to new values MUST NOT happen without a major version bump. Adding new optional request fields, new response fields, new values to enums used only in requests, new values to response enums the schema documents as open to new values, and new endpoints is permitted. An API declared versionless under `BE-APIVER-001` has no major version to bump, so it MUST NOT make any of those breaking changes: a deprecated field or operation stays served until the API adopts a versioning strategy.
 
-**Rationale:** Every consumer of the API has code that depends on the current shape. Removing or renaming fields breaks clients silently — the client deserializes a response and gets `null` where it expected a value, or the server rejects a request that worked yesterday. Additive evolution within a major version is the only contract that lets clients upgrade lazily.
+**Verification:** Any spec or plan that modifies an existing API endpoint MUST classify the change as additive (compatible) or breaking (requires major version). `/papur:analyze` flags endpoint-modifying specs that omit the classification, plans that describe a change the Statement lists as breaking — subtractive, narrowing, or otherwise — within a major version without a major-version commitment, and a versionless API's spec that describes one, the removal of a deprecated field or operation included, without adopting a versioning strategy. **Not flagged:** an existing error code's value or meaning changed, a renamed one included, which `BE-ERRENV-002` owns for a resource-oriented HTTP API and `security-backend.md` `BE-ERR-002` for any other.
 
-**Verification:** Any spec or plan that modifies an existing API endpoint MUST classify the change as additive (compatible) or breaking (requires major version). Validate runs schema-diff against the committed schema and flags subtractive or narrowing changes within a major version; flags plans that propose breaking changes without a major-version commitment.
+**Source:** Semantic Versioning 2.0.0, Google AIP-180 (Backwards compatibility), Microsoft Azure REST API Guidelines (*Use Extensible Enums*)
 
-**Source:** Semantic Versioning for APIs, Google Cloud API Design Guide §compatibility
+## BE-PATCH — Partial Updates
+
+### BE-PATCH-001
+
+> `PATCH` endpoints MUST declare their patch document format by media type — JSON Merge Patch (`application/merge-patch+json`, RFC 7396), JSON Patch (`application/json-patch+json`, RFC 6902), or a project format documented in `specs/system.md` or in the spec that introduces the endpoint, that defines how an absent field and an explicit `null` each apply. The server MUST apply a patch atomically: when any change in the document cannot be applied, none is applied, and no partially modified representation is ever observable.
+
+**Verification:** Any spec or plan that introduces a `PATCH` endpoint MUST name its patch media type (or the documented project format) and commit to all-or-nothing application. `/papur:analyze` flags `PATCH` specs that accept a plain `application/json` body with no stated absent-versus-`null` semantics, and plans that apply patch operations one by one without a transaction or equivalent all-or-nothing guard.
+
+**Source:** RFC 5789 §2, RFC 7396, RFC 6902, Microsoft Azure REST API Guidelines (*HTTP Return Codes* and *JSON*)
+
+## BE-COND — Conditional Requests
+
+### BE-COND-001
+
+> For a resource more than one client can modify, a write that replaces it, or that applies a change whose effect depends on the representation the client read, MUST let the client make the write conditional on the version it read — whether the write is a `PUT`, such a `PATCH`, or an RPC update method or GraphQL mutation. The mechanism is either HTTP conditional requests — a validator (`ETag`) on responses, `If-Match` honored on the write, and `412 Precondition Failed` on a mismatch — or a version field the schema documents (e.g., the `etag` field of AIP-154), compared by the server before applying the write, with a mismatch rejected with `409 Conflict` or, in an RPC protocol, its equivalent error (gRPC `ABORTED`).
+
+**Verification:** Any spec or plan that introduces, on a resource multiple clients can modify, a `PUT` endpoint, a `PATCH` endpoint whose patch depends on the prior representation, or an RPC update method or GraphQL mutation that replaces the resource or applies such a change MUST name its precondition mechanism and its mismatch response. `/papur:analyze` flags such specs that commit to no precondition mechanism, including one whose only guard is a row lock or transaction held inside the write. A lost update within one request — the server's own read-modify-write with no guard — is `concurrency-backend.md` `BE-TXN-002`'s.
+
+**Source:** RFC 9110 §8.8.3 (`ETag`), §13.1.1 (`If-Match`), §15.5.10 (`409` for a version conflict), §15.5.13 (`412`); RFC 5789 §2; Google AIP-154 (Resource freshness validation); Microsoft Azure REST API Guidelines (*Conditional Requests*)
+
+## BE-LRO — Long-Running Operations
+
+### BE-LRO-001
+
+> A `202 Accepted` response SHOULD identify a status monitor — such as an `Operation-Location` header or a documented field in the response body — naming a resource that reports the operation's state (such as pending, running, succeeded, failed, canceled). That resource SHOULD expose the result, or a link to it, on success and the failure in the project's error envelope (`BE-ERRENV-001`) on failure, and SHOULD carry `Retry-After` as the polling interval while the operation is incomplete. A `202` whose completion is delivered through a documented push channel (a webhook, server-sent events) MAY identify that channel instead of a status monitor.
+
+**Verification:** Any spec or plan that introduces an endpoint returning `202 Accepted` SHOULD name the status-monitor URL, the operation states it reports, how the result and a failure are retrieved, and its `Retry-After` polling interval, or the documented push channel the Statement's MAY allows. `/papur:analyze` emits a warning when a `202` endpoint spec names neither a status monitor nor a push channel — except where the client needs the outcome and has no way to observe completion, which `performance-backend.md`'s `BE-ASYNC-001` owns — or names a status monitor that reports no operation states, gives no way to retrieve the result, or none to retrieve the failure, omits `Retry-After`, or reports failure outside the project error envelope. A failure the status monitor reports in an error (`4xx` or `5xx`) response is `BE-ERRENV-001`'s. This rule governs the status monitor's shape: slow work left on the request path, or offloaded with no way for a client that needs the outcome to observe completion, is `BE-ASYNC-001`'s.
+
+**Source:** RFC 9110 §15.3.3 and §10.2.3 (`Retry-After`), Microsoft Azure REST API Guidelines (*Long-Running Operations & Jobs*), Google AIP-151 (Long-running operations)
+
+## BE-REPR — Representation Conventions
+
+### BE-REPR-001
+
+> Instants (timestamps) in request and response payloads MUST be unambiguous about time zone and represented one way across the API: RFC 3339 date-time strings carrying an explicit UTC offset (`2026-10-19T14:30:00Z`, `2026-10-19T09:30:00-05:00`), or integer Unix time with its unit (seconds or milliseconds) documented in the schema, or a schema type defined as a count from the Unix epoch (protobuf `google.protobuf.Timestamp`). Date-times without an offset MUST NOT represent instants. Calendar dates and local times that denote no instant (a birthday, an opening hour) MAY use RFC 3339 `full-date` and `partial-time`.
+
+**Verification:** Any spec or plan that introduces a timestamp field in an API request or response MUST name its representation, and `specs/system.md` MUST declare the API-wide one. `/papur:analyze` flags timestamp fields described without a representation, with an offset-less date-time format, or with a representation that differs from the one `specs/system.md` declares.
+
+**Source:** RFC 3339 §5.6, Microsoft Azure REST API Guidelines (*JSON*), Google AIP-142 (Time and duration), POSIX.1-2024 Base Definitions 3.125 (*Epoch*), Protocol Buffers `timestamp.proto`
+
+### BE-REPR-002
+
+> Field names, query-parameter names, and enum values SHOULD each follow one casing convention (e.g., `camelCase` field names, `UPPER_SNAKE_CASE` enum values) declared in `specs/system.md` and applied across every endpoint of the API.
+
+**Verification:** Any spec or plan that introduces API fields, query parameters, or enum values SHOULD use the casing convention declared in `specs/system.md`. `/papur:analyze` emits a warning when a spec's names mix conventions or depart from the declared one, or when a project with a public API declares none.
+
+**Source:** Microsoft Azure REST API Guidelines (*JSON*, *HTTP Query Parameters and Header Values*), Google AIP-140 (Field names), Google AIP-126 (Enumerations)
+
+### BE-REPR-003
+
+> A JSON payload MUST NOT carry a number with greater magnitude or precision than a binary64 (double-precision) number provides: an integer outside the range −(2^53 − 1) to 2^53 − 1, such as a 64-bit identifier, or a value with more precision than binary64 provides. Such a value MUST be encoded as a JSON string, documented in the schema as a string-encoded number.
+
+**Verification:** Any spec or plan that introduces a JSON API field holding a number with greater magnitude or precision than binary64 provides MUST encode and document it as the Statement requires. `/papur:analyze` flags a spec that declares such a field — an `int64` or `uint64` identifier, a high-precision decimal — as a JSON number, other than an integer field whose spec bounds its values within −(2^53 − 1) to 2^53 − 1.
+
+**Source:** RFC 7493 §2.2, which advises against such a number and recommends a string, so the Statement's MUST goes beyond it on purpose, RFC 8259 §6

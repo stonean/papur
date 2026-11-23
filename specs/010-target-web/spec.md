@@ -1,13 +1,6 @@
 ---
 status: draft
 dependencies: [003-semantic-elements, 004-theming, 005-css-layer, 006-behavior-layer, 007-raw-html, 009-multi-target, 014-accessibility]
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 next-criterion: 7
 ---
 

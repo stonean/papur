@@ -11,29 +11,66 @@
 #   1. ductus derive-dependencies --write --staged — frontmatter `dependencies:` from
 #      body inline links to sibling specs. Also runs the dependency-cycle
 #      check, which spans the full spec graph (a staged edge can close a cycle
-#      through a spec that is not staged) and exits non-zero on a cycle.
+#      through a spec that is not staged) and exits non-zero on a cycle. It
+#      also exits non-zero on an `unwritable` spec, one whose derived
+#      `dependencies:` cannot be written without breaking its frontmatter,
+#      which it reports across every tracked spec, staged or not, since only
+#      an edit by hand fixes it.
 #   2. ductus derive-references --write --staged — frontmatter `references:` from body
 #      inline links to other services' specs. Strictly distinct from
-#      dependencies (spec 030).
+#      dependencies (spec 030). It exits non-zero on an `unwritable` spec the
+#      same way, across every tracked spec.
 #
-# It then runs the acceptance-criterion labelling pass over each staged spec —
+# Finally — after every write above has landed and been staged — it runs two
+# read-only checks, the first over the corpus for dangling pointers:
+#
+#   3. ductus check-corpus-links — every relative markdown link under the spec
+#      root that resolves to nothing. Corpus-wide rather than staged-scoped,
+#      and deliberately so: the commit that breaks a link is usually the one
+#      that *deletes* its target, and the files left dangling are the inbound
+#      referrers, which are not in the commit at all. A staged-only check would
+#      miss the case it exists for. It exits non-zero on a broken link, on an
+#      unreadable spec file, and on a spec root it could not list — the last
+#      two because a check that could not run must not exit like one that
+#      passed. It is ordered after the writes because it only reads: a
+#      blocking read before the staging block would abort the commit with the
+#      derived rewrites unstaged, leaving a blocked commit and a passing one
+#      in different tree states.
+#
+#   4. ductus check-artifact-size --project-files --staged — refuses a commit
+#      that grows a project file (AGENTS.md, and system.md, events.md and
+#      errors.md under the spec root) already over `[artifacts]
+#      read-size-bytes`, or adds one over it, naming the file, its staged and
+#      HEAD sizes, the limit and `/prune --project`. A shrink, an unchanged
+#      file and a deletion pass, so a project already over the limit can still
+#      commit its way down (spec 075). It exits non-zero on a file it refused
+#      or could not read, for the same reason step 3 does, and is read-only, so
+#      it follows step 3 under the same ordering argument.
+#
+# Before that it runs the acceptance-criterion labelling pass over each staged spec —
 # `ductus label-criteria`, which assigns the stable `AC{n}:` label a criterion
 # is cited by and maintains the `next-criterion` counter (spec 013). This is
 # the backstop for a criterion typed by hand in an editor rather than through
 # a ductus command.
 #
 # This file is overwritten by /ductus unless listed in .ductus/config.toml
-# `pinned.files`. The `# managed-by: ductus` sentinel above is how /ductus
-# detects that the file is one it owns.
+# `pinned.files`. The `# managed-by: ductus` line above tells a reader the file
+# is ductus's; /ductus places it by its manifest row, not by that line.
 
 set -euo pipefail
 shopt -s nullglob
-ROOT="$(git rev-parse --show-toplevel)"
+# The project root is the directory above this file: /ductus places the hook at
+# `papur/.githooks/ductus-pre-commit`. Git runs a hook from the root of the
+# work tree, which is not the project root when the project is a subdirectory
+# of its repository (spec 059), so the file's own location is what says which
+# project it belongs to. At the repository root the two are the same directory.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Resolve the runtime the way /ductus registers it: the repo-relative pointer
-# `.ductus/bin/ductus`, which every run materializes and which resolves to the
-# ductus-owned store (or to a project's own `[runtime] path`). PATH is a
+# `.ductus/bin/ductus`, which every run compares with the resolved binary and
+# re-makes when it differs: a symlink to the ductus-owned store (or to a
+# project's own `[runtime] path`), or on Windows a copy of it. PATH is a
 # fallback for a hand-installed binary only. Since spec 048 moved the runtime
 # into the store, /ductus never puts `ductus` on PATH — so a PATH-only guard
 # would be false for every adopter.
@@ -84,9 +121,57 @@ fi
 # I am about to call — so it also covers a hand-placed binary and any future
 # primitive this hook grows. Probing capability rather than parsing a version
 # means there is no pin for the hook to get out of sync with.
-for primitive in derive-dependencies derive-references; do
-  if ! "$ductus_bin" "$primitive" --help > /dev/null 2>&1; then
-    installed="$("$ductus_bin" --version 2>/dev/null || echo 'version unknown')"
+#
+# The guard's four `--help` probes of the binary (the three in the loop below
+# over `derive-dependencies`, `derive-references` and `check-corpus-links`, and
+# `check-artifact-size --help`) run bounded, and so does the one `--version`
+# echo `installed_version` makes, on the halt path only, so a binary that hangs
+# cannot hang the commit (BE-TIMEOUT-001). `timeout` is not on macOS, so `probe`
+# is a portable watchdog bounded by `probe_timeout`. A probe it ended returns 124, which
+# the caller reads as a failed probe. The `derive-*`, `check-corpus-links` and
+# `check-artifact-size` calls below stay unbounded on purpose: a fixed bound
+# could kill one over a large repository, which is slow and not hung.
+
+# The bound on a probe, in seconds: the one `/ductus` puts on its own
+# `--version` probes (`{probe-timeout}`).
+probe_timeout=10
+# The grace, in seconds, between SIGTERM and SIGKILL for a probe that ignores it.
+probe_kill_grace=1
+probe() {
+  local pid watcher rc=0 out
+  # The probe writes to a file, never the caller's pipe, so a child it leaves
+  # behind (a wrapper that does not `exec`) cannot hold a `$(...)` open.
+  out="$(mktemp "${TMPDIR:-/tmp}/ductus-probe.XXXXXX")" || return 1
+  "$@" > "$out" &
+  pid=$!
+  # SIGTERM at the bound, then SIGKILL after the grace for one that ignores it.
+  ( sleep "$probe_timeout"; kill -TERM "$pid" 2> /dev/null; sleep "$probe_kill_grace"; kill -KILL "$pid" 2> /dev/null ) > /dev/null 2>&1 &
+  watcher=$!
+  wait "$pid" || rc=$?
+  kill "$watcher" 2> /dev/null || true
+  wait "$watcher" 2> /dev/null || true
+  cat "$out"
+  rm -f "$out"
+  # 143 is SIGTERM and 137 SIGKILL, which only the watchdog sends.
+  if [ "$rc" -eq 143 ] || [ "$rc" -eq 137 ]; then rc=124; fi
+  return "$rc"
+}
+
+# The binary's own `--version` output, echoed to the terminal: its first line
+# only, cut before any pipe so a long output cannot SIGPIPE a producer under
+# `pipefail`, kept to printable characters and 80 columns, so it cannot carry
+# an escape sequence or a forged line into the message (048's analysis,
+# BE-INPUT-011).
+installed_version() {
+  local out
+  out="$(probe "$ductus_bin" --version 2> /dev/null)" || out="version unknown"
+  out="${out%%$'\n'*}"
+  printf '%s' "$out" | LC_ALL=C tr -cd '[:print:]' | cut -c1-80
+}
+
+for primitive in derive-dependencies derive-references check-corpus-links; do
+  if ! probe "$ductus_bin" "$primitive" --help > /dev/null 2>&1; then
+    installed="$(installed_version)"
     echo "ductus: pre-commit halted — the installed runtime is too old." >&2
     echo "  $ductus_bin reports: $installed" >&2
     echo "  It has no \`$primitive\` subcommand, which this hook calls to derive" >&2
@@ -96,6 +181,28 @@ for primitive in derive-dependencies derive-references; do
     exit 1
   fi
 done
+
+# The staged size check calls a flag, not a subcommand, so the loop above cannot
+# see it missing: an older runtime has `check-artifact-size` with no
+# `--project-files` or `--staged`, and would fail the call below with a bare
+# usage error. Capture the help once and match it with `case`, never a pipe:
+# `grep -q` exits at its first match, and under `pipefail` the producer's
+# SIGPIPE would then read as a missing flag.
+size_help="$(probe "$ductus_bin" check-artifact-size --help 2>/dev/null || true)"
+case "$size_help" in
+  *--project-files*--staged*|*--staged*--project-files*) ;;
+  *)
+    installed="$(installed_version)"
+    echo "ductus: pre-commit halted — the installed runtime is too old." >&2
+    echo "  $ductus_bin reports: $installed" >&2
+    echo "  Its \`check-artifact-size\` has no \`--project-files\` and \`--staged\`" >&2
+    echo "  options, which this hook calls to refuse growth of a project file" >&2
+    echo "  already over the artifact size limit." >&2
+    echo "  Run /ductus to acquire the pinned runtime, or commit with" >&2
+    echo "  --no-verify to bypass this hook deliberately." >&2
+    exit 1
+    ;;
+esac
 
 "$ductus_bin" derive-dependencies --write --staged > /dev/null
 "$ductus_bin" derive-references --write --staged > /dev/null
@@ -121,9 +228,19 @@ done
 # every branch-scoped spec went unlabelled, silently. A hook demanding exactly three
 # would silently stop labelling that spec's criteria. This is a copy of a rule
 # whose home is the runtime, and a copy on purpose — the hook runs before any
-# binary is resolvable — so a runtime test holds the two in agreement rather
-# than trusting a reader to notice they drifted.
-staged_specs="$(git diff --cached --name-only \
+# binary is resolvable. Audit Family 22
+# (`scripts/audit/adopter-shell-behavior.sh`) holds this file in agreement with
+# the runtime by driving it against fixtures named `1000-thousandth` and
+# `1234.1-staged`, so a digits-only filter here fails a check rather than
+# waiting for an adopter to find it.
+#
+# `--relative` names each path from the project root, where this hook runs.
+# Git otherwise names them from the work tree's root whatever the working
+# directory, so in a project that is a subdirectory of its repository every
+# staged spec carried one leading segment too many, matched nothing, and was
+# neither labelled nor re-staged (spec 059). It also leaves out another
+# project's specs. At the repository root it changes nothing.
+staged_specs="$(git diff --cached --name-only --relative \
   | { grep -E "^[^/]+/(([0-9][0-9][0-9]|[1-9][0-9][0-9][0-9]+)|[a-z0-9]+(-[a-z0-9]+)*\.[1-9][0-9]*)-[^/]+/(spec|spec-and-plan)\.md\$" || true; })"
 
 if [ -n "$staged_specs" ]; then
@@ -139,3 +256,37 @@ if [ -n "$staged_specs" ]; then
     git add "$f"
   done
 fi
+
+# Dangling spec-to-spec pointers, checked after the writes — after every write above has
+# landed and been staged.
+#
+# Three checks sit near this ground and none of them covers it:
+# `check-orphaned-references` scopes to the adopter-owned bootstrap referrers,
+# `/ductus:analyze` is bounded to one feature plus its dependencies, and
+# `/ductus:audit` Family 26 is maintainer-only — adopters never invoke it. So
+# without this an adopter who deletes or renames a spec directory dangles
+# every inbound pointer and nothing reports it, with no error and no gate,
+# until a reader follows a pointer to nothing.
+#
+# Blocking, and corpus-wide. The precedent is the cycle check inside
+# `derive-dependencies` above, which likewise spans the full spec graph and
+# exits non-zero: a staged edit can break something that is not staged, so a
+# staged-only scope would miss the case this exists for. `git commit
+# --no-verify` is the deliberate bypass, which is what makes this safe to
+# adopt into a repo that already carries broken links.
+#
+# It runs after the writes because it only *reads* rather than
+# writes: putting a blocking read before the staging block would abort the
+# commit with the derived rewrites sitting unstaged on disk, so a blocked
+# commit and a passing one would leave the tree in different states. After
+# the writes means the author fixes the link and re-commits against a tree the hook has
+# already finished preparing.
+#
+# stdout is the JSON result and is discarded; the human-readable citations
+# and the fix guidance go to stderr, which is what the author needs to see.
+"$ductus_bin" check-corpus-links > /dev/null
+
+# Project-file growth, checked after the links for the same reason that check
+# is last: it only reads. stdout is the JSON result and is discarded; the
+# refused files and the `/prune --project` fix go to stderr.
+"$ductus_bin" check-artifact-size --project-files --staged > /dev/null

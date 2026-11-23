@@ -1,18 +1,17 @@
 ---
 description: Register a service so cross-service references resolve to its lifecycle status.
 argument-hint: "[alias repo path [--description <text>] | --list]"
-parity:
-  strict-files:
-    - ".govern.toml"
 ---
 
 # Link
+
+Invocation arguments: `$ARGUMENTS` (empty when none were supplied)
 
 Register a service in `.ductus/config.toml` so cross-service references to it resolve to the linked spec's lifecycle status.
 
 ## Purpose
 
-Records a service in the `.ductus/config.toml` `[services]` registry — its canonical repository URL and its local checkout path — so a cross-service reference whose href matches that repo can surface the linked spec's status (see [030 — Cross-Service References](../../specs/030-cross-service-references/spec.md)). The registry is **required for status resolution, optional for referencing**: a reference whose repo matches no `[services]` entry stays a plain navigational link (the `unregistered` outcome). Registration is not derived — the local `path` is machine-local knowledge `ductus` cannot infer — so it is captured here rather than harvested.
+Records a service in the `.ductus/config.toml` `[services]` registry — its canonical repository URL and its local checkout path — so a cross-service reference whose href matches that repo can surface the linked spec's status (see [030 — Cross-Service References](https://github.com/stonean/ductus/blob/main/specs/030-cross-service-references/spec.md)). The registry is **required for status resolution, optional for referencing**: a reference whose repo matches no `[services]` entry stays a plain navigational link (the `unregistered` outcome). Registration is not derived — the local `path` is machine-local knowledge `ductus` cannot infer — so it is captured here rather than harvested.
 
 ## Context
 
@@ -23,11 +22,11 @@ This command does not require a session target — it edits the project-level `[
 - Read and write only the config file — the newest of `.ductus/config.toml`, `.govern/config.toml`, or the legacy root `.govern.toml` that exists (the active-file rule, specs 042 and 049). Do NOT modify any spec, plan, scenario, source file, or session state.
 - Do NOT fetch the repo URL or reach across the network. The local checkout `path` is the only state read at resolution time, and that resolution belongs to `/papur:status` and `/papur:analyze`, not to this command.
 - Removal and edits of an existing entry stay hand-edits to `.ductus/config.toml`.
-- Reference: §text-first-artifacts, §runtime-boundary, and [030 `data-model.md`](../../specs/030-cross-service-references/data-model.md) — the canonical source for the `[services]` schema (constitution loaded by `/papur:target`; do not re-read).
+- Reference: §text-first-artifacts, §runtime-boundary, and [030 `data-model.md`](https://github.com/stonean/ductus/blob/main/specs/030-cross-service-references/data-model.md) — the canonical source for the `[services]` schema (constitution loaded by `/papur:target`; do not re-read).
 
 ## Instructions
 
-This command is host-driven: it has no runtime primitive, so the same procedure runs whether or not the `ductus` runtime is installed — both the deterministic and the markdown-only paths converge on the host's file tools reading and writing `.ductus/config.toml`. The full procedure — argument forms, per-field validation, the additive write, and `--list` — is in the **Procedure** reference below.
+This command is host-driven: it has no runtime primitive, so the host's file tools read and write `.ductus/config.toml`. The full procedure — argument forms, per-field validation, the additive write, and `--list` — is in the **Procedure** reference below.
 
 <!-- audit:ignore-promotion -->
 1. Parse the arguments. With `--list`, run the **List the registry** branch (read-only) and stop. With three positional values (alias, repo, path) plus an optional `--description <text>`, take them as pre-supplied field values, validate them, and prompt only for anything missing or invalid. With no arguments, collect every field interactively.
@@ -61,8 +60,8 @@ Prompt one field at a time, the same one-at-a-time interaction `/papur:clarify` 
 Per field, as entered:
 
 - **alias** — a valid bare TOML key (letters, digits, hyphens, underscores; no whitespace, dots, or quotes) and **not already present** as a `[services.<alias>]` table in `.ductus/config.toml`. A collision is **rejected** with no write — changing an existing entry is a hand-edit. This is the duplicate-alias rejection.
-- **repo** — URL-shaped (a scheme such as `https://` and a host). Recorded verbatim; it is identity and navigation only and is never fetched. If the same URL is already registered under another alias, **warn** — a duplicate repo makes the match ambiguous (a registry finding) — but allow the write.
-- **path** — the local checkout location, relative to the repo root or absolute, recorded exactly as written. If it does not currently resolve to a directory, **warn** but do **not** block: a missing checkout is the valid `not-checked-out` state, surfaced at resolution time, not a config error.
+- **repo** — URL-shaped (a scheme such as `https://` and a host). Recorded verbatim; it is identity and navigation only and is never fetched. If the same repo is already registered under another alias, compared as resolution compares it, with a trailing `/` and `.git` removed, **warn** — a duplicate repo makes the match ambiguous (a registry finding) — but allow the write.
+- **path** — the local checkout location, relative to the repo root or absolute, recorded exactly as written, and **rejected** when empty, since every reader of the registry halts on an empty one, which would resolve to this repository. If it does not currently resolve to a directory, **warn** but do **not** block: a missing checkout is the valid `not-checked-out` state, surfaced at resolution time, not a config error.
 - **description** — free text, optional, informational only; no behavior depends on it.
 
 ### Additive write
@@ -78,6 +77,6 @@ Per field, as entered:
 
 ### Notes
 
-- The `[services]` schema (`repo`, `path`, optional `description`) is declared canonically in [030 `data-model.md`](../../specs/030-cross-service-references/data-model.md).
+- The `[services]` schema (`repo`, `path`, optional `description`) is declared canonically in [030 `data-model.md`](https://github.com/stonean/ductus/blob/main/specs/030-cross-service-references/data-model.md).
 - A duplicate `repo` across two aliases is a registry-validation finding (ambiguous match), surfaced on resolution — this command warns at registration time but does not block it.
 - Outcome semantics (`ok`, `unregistered`, `not-checked-out`, `broken`, `status-unreadable`) belong to `/papur:status` and `/papur:analyze`; this command only records the registry the resolver reads.

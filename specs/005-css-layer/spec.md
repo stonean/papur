@@ -1,13 +1,6 @@
 ---
 status: draft
 dependencies: [001-file-format, 002-attribute-syntax, 004-theming, 006-behavior-layer, 014-accessibility]
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 next-criterion: 8
 ---
 

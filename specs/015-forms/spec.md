@@ -1,13 +1,6 @@
 ---
 status: draft
 dependencies: [002-attribute-syntax, 014-accessibility]
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 ---
 
 # 015 — Forms

@@ -132,3 +132,11 @@ are recorded project-level choices, wired in by the specs that use them.
 - Ask before changing database schema
 
 -->
+
+<!-- BEGIN ductus:constitutions -->
+
+<!-- END ductus:constitutions -->
+
+<!-- BEGIN ductus:memory-routing -->
+> **Where a learning goes** ([§drift-prevention](.ductus/constitution.md#drift-prevention)). Commit whatever would help a teammate, since an agent's per-user memory holds only personal facts and external pointers. Then file it by who it is true for: every project running the pipeline, the framework's constitution, which is upstream, so raise it with ductus rather than edit `.ductus/constitution.md`; your organization's projects, the shared constitution it registers; this project alone, this file only for what every session needs before acting, and otherwise where its work is read: architecture in `system.md`, `events.md` or `errors.md`, read before changing architecture, configuration or deployment; a feature's decision in its spec, read when the spec is worked; a procedure in `docs/` or a skill, read when the task comes up; a one-file trap in a comment or test there, read when the file is opened; how a lesson was learned in its commit.
+<!-- END ductus:memory-routing -->

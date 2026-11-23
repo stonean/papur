@@ -1,118 +1,169 @@
 # Configuration Rules
 
-Enforceable rules for operator-tunable values, named constants, and environment variables. These rules apply to all projects adopting `ductus`, regardless of whether the code is backend or frontend — configuration is the same problem on both surfaces.
-
-Rules use RFC 2119 language: **MUST** / **MUST NOT** are enforced by the validate command (errors); **SHOULD** / **SHOULD NOT** are flagged as warnings.
-
-Rule IDs follow the format `CFG-{CATEGORY}-{NNN}` and are permanent — once assigned, an ID is never renumbered, even if the rule is moved within the file or deprecated. Categories: `CONST` (constants), `ENV` (environment variables). See `specs/017-derive-dont-ask/data-model.md` for the full schema.
+Rules for operator-tunable values, named constants, environment variables and other configuration values, and feature flags, for backend and frontend code alike. They verify **design-time commitments** — what a spec or plan must state, and the config-loading code its affected-files snippets show; `/papur:analyze` enforces them against feature artifacts, and `/papur:review`'s quality pass applies them to the code in scope, as it does every loaded rule file no other pass names. A command-line flag is a configuration value here when it supplies a setting that could equally come from an environment variable, a configuration file, or a default, the sources `CFG-ENV-007` orders; an argument that names what one invocation acts on, or how, belongs to the command-line interface and is left to its help output. Rule IDs follow the format `CFG-{CATEGORY}-{NNN}`. Categories: `CONST` (constants), `ENV` (environment and configuration values), `FLAG` (feature flags). Severity, ID permanence, and how a project excludes this file from review follow constitution §rules.
 
 ## CFG-CONST — Constants
 
 ### CFG-CONST-001
 
-> Shared constants — values used across multiple modules — MUST live in a centralized location idiomatic to the project's language (e.g., `shared/constants/` in JavaScript/TypeScript, `internal/constants/` in Go, a top-level constants module in Python) rather than being duplicated across modules.
+> Shared constants — values used across multiple modules — MUST live in a centralized location idiomatic to the project's language rather than being duplicated across modules.
 
-**Rationale:** Cross-cutting defaults that drift between modules produce silent inconsistencies — a timeout treated as 30s in one place and 60s in another. A single location makes the canonical value findable and auditable.
+**Verification:** Any spec or plan that introduces a value used by more than one module, such as a timeout, size, threshold, rate limit, format string, well-known header, or protocol version, MUST name the centralized constants location it will live in. `/papur:analyze` flags plans that introduce such a value without naming that location, and duplicated literal definitions in plan affected-files snippets.
 
-**Verification:** Any spec or plan that introduces a value used by more than one module (timeouts, sizes, thresholds, rate limits, format strings, well-known headers, protocol versions) MUST name the centralized constants location it will live in. Validate flags plans that introduce cross-module values without naming the shared-constants location, and flags duplicated literal definitions in plan affected-files snippets.
-
-**Source:** Twelve-Factor App (III. Config); "Don't Repeat Yourself"
+**Source:** "Don't Repeat Yourself" (Hunt & Thomas, *The Pragmatic Programmer*, 1999)
 
 ### CFG-CONST-002
 
 > Module-local constants — values used only within a single module — MUST live within that module (a dedicated constants file inside the module, or at the top of the file that uses them), not in the shared constants location.
 
-**Rationale:** Co-locating a single module's constants with that module keeps the module self-contained and avoids coupling unrelated modules through a shared import. The shared constants location stays focused on values that genuinely cross modules.
-
-**Verification:** Any spec or plan that introduces a named constant scoped to one module MUST place it within that module, not in the shared location. Validate flags plans that propose adding single-module values to the shared constants location.
+**Verification:** Any spec or plan that introduces a named constant scoped to one module MUST place it within that module; `/papur:analyze` flags plans that propose adding a single-module value to the shared constants location.
 
 ### CFG-CONST-003
 
-> Operator-tunable values (timeouts, retry counts, batch sizes, thresholds, rate limits, expiry durations) MUST be backed by a named constant or an environment variable. They MUST NOT appear as bare literals in business logic.
+> Operator-tunable values (timeouts, retry counts, batch sizes, thresholds, rate limits, expiry durations) MUST be backed by a named constant or by a configuration value declared per `CFG-ENV-001` — an environment variable, a configuration-file key, or a command-line flag. They MUST NOT appear as bare literals in business logic.
 
-**Rationale:** Bare literals scattered across the codebase are invisible to operators, hard to audit, and easy to leave inconsistent during tuning. A single named source of truth makes the value findable, changeable, and auditable.
+**Verification:** Any spec or plan that introduces operator-tunable behavior MUST commit to a named constant or a configuration value for each value. `/papur:analyze` flags plan affected-files snippets that show a numeric or string literal of operator-tunable shape (durations, counts, thresholds, rate limits) without a constant or configuration lookup. **Not flagged:** ordinary literals for local logic — loop indices, intermediate calculations, string formatting within a function.
 
-**Verification:** Any spec or plan that introduces operator-tunable behavior MUST commit to a named constant or env var for each value. Validate flags plan affected-files snippets that show numeric or string literals of operator-tunable shape (durations, counts, thresholds, rate limits) without a constant or env var lookup. Ordinary literals used for local logic — loop indices, intermediate calculations, string formatting within a function — are out of scope.
+**Source:** Martin Fowler, *Refactoring* (2nd ed.), "Replace Magic Literal"
 
 ### CFG-CONST-004
 
 > When an operator-tunable value has a valid range, the bounds (minimum and/or maximum) MUST be expressed as named constants alongside the default constant.
 
-**Rationale:** Bare-literal bounds in validation code are invisible to operators looking for the safe range, drift between the defining spec and the implementation, and produce inconsistent enforcement when the same value is checked in more than one place. Naming the bounds makes the safe range discoverable and enforceable from one place.
+**Verification:** Any spec or plan that introduces a value with a documented valid range MUST commit to a named constant for each bound, alongside the default constant. `/papur:analyze` flags plans that propose range checks using bare literals.
 
-**Verification:** Any spec or plan that introduces a value with a documented valid range MUST commit to named constants for each bound (e.g., `MinHTTPReadTimeoutSeconds = 1`, `MaxHTTPReadTimeoutSeconds = 300`) alongside the default constant. Validate flags plans that propose range checks using bare literals.
+**Source:** Martin Fowler, *Refactoring* (2nd ed.), "Replace Magic Literal"
 
-## CFG-ENV — Environment variables
+## CFG-ENV — Environment and configuration values
 
 ### CFG-ENV-001
 
-> Every environment variable MUST be declared as either **optional with a default fallback defined as a named constant**, or **required with no default** (in which case `CFG-ENV-003` governs its startup validation). Secrets MUST be declared required and MUST NOT carry an in-application default value (see `BE-DATA-003`). All environment variables MUST be read once at startup and the value cached; per-call reads from `os.environ` (or equivalent) are forbidden.
+> Every configuration value the application reads — an environment variable, a key in a configuration file, or a command-line flag — MUST be declared as one of: **required with no default** (in which case `CFG-ENV-003` governs its startup validation); **optional with a default fallback defined as a named constant**; or **optional with no default**, where an absent value disables a named feature or integration and the declaration names what is disabled; under that third declaration an empty value counts as absent, as it does for a required value under `CFG-ENV-003`. Secrets MUST NOT carry an in-application default value, so a secret is declared required, or optional with no default when its absence disables the integration it authenticates. All environment variables MUST be read once at startup and the value cached; per-call reads from `os.environ` (or equivalent) are forbidden.
 
-**Rationale:** Repeated env reads are a silent dependency on process state, slow hot paths, and make defaults invisible to readers. Reading once at startup, falling back to a constant for optional values, and failing fast for required values produces predictable behavior, makes defaults discoverable, and keeps the runtime fast. Excluding secrets from in-code defaults prevents accidentally shipping placeholder credentials.
+**Verification:** Any spec or plan that introduces a configuration value MUST declare it one of the Statement's three ways and, for an environment variable, commit to startup-time resolution. `/papur:analyze` flags plans that propose an optional value naming neither its default constant nor the disabled feature, plans that propose a secret with an in-application default value (a fallback the application's own code supplies when the configured value is absent), and plans whose affected-files snippets show per-call env reads. A secret's value or default in a committed configuration or `.env` file (a configuration-file source in `CFG-ENV-007`'s order), or a fallback in build, dev-server or deploy configuration or a script, is `CFG-ENV-013`'s, or `CFG-ENV-010`'s when the secret reaches a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build); a fallback the application's own code supplies for the same secret stays this rule's.
 
-**Verification:** Any spec or plan that introduces an env var MUST declare it optional-with-default-constant or required-no-default, and MUST commit to startup-time resolution. Validate flags plans that propose optional env vars without naming the default constant, plans that propose secrets with a hard-coded default, and plans that show per-call env reads in affected-files snippets.
-
-**Source:** Twelve-Factor App (III. Config)
+**Source:** Twelve-Factor App (III. Config); Jim Shore, "Fail Fast" (IEEE Software 21(5), 2004)
 
 ### CFG-ENV-002
 
-> A single canonical inventory of every environment variable the application reads MUST be maintained alongside the source code. The inventory MUST describe each variable's purpose, declare whether it is required or optional, and provide a safe placeholder or default value. Acceptable forms include `.env.example` (twelve-factor projects), a values schema (`values.schema.json` for Helm charts), a typed config module that lists every variable, or an equivalent declarative manifest checked into the repository.
+> Every environment variable and every configuration-file key the application reads MUST be listed in a canonical inventory maintained alongside the source code — one inventory for each kind of source, or one for both, and never two for the same source. The inventory MUST describe each value's purpose, declare whether it is required or optional, and provide a safe placeholder or default value. Acceptable forms include `.env.example` (projects that load configuration with a dotenv-style loader), a Helm chart's `values.yaml` (defaults) with its `values.schema.json` (types and required keys), a commented example of the configuration file that lists every key, a typed config module that lists every value, or an equivalent declarative manifest checked into the repository. Command-line flags are outside this rule: a command-line interface documents its flags in its own help output.
 
-**Rationale:** Operators discover required configuration by reading this inventory. Variables introduced in code but absent from the inventory produce silent runtime failures in fresh deployments and obscure the application's true configuration surface. The form of the inventory follows the deployment model — `.env.example` for processes, Helm values for Kubernetes, etc. — but the single-source-of-truth requirement does not.
+**Verification:** Any spec or plan that introduces an environment variable or a configuration-file key MUST name the inventory that lists it and include updating it in its tasks. `/papur:analyze` flags plans that introduce either without a corresponding inventory update in affected-files, and plans that start a second inventory for a source that already has one.
 
-**Verification:** Any spec or plan that introduces an env var MUST name the inventory file and include updating it as part of its tasks. Validate flags plans that introduce env vars without a corresponding inventory update in affected-files.
+**Source:** dotenv-safe README; Helm, "Charts" (Schema Files: `values.schema.json`); Helm, "Chart Best Practices: Values"
 
 ### CFG-ENV-003
 
-> Every required environment variable MUST be validated at startup. The application MUST fail fast — exit non-zero with a clear error message naming the variable — when a required variable cannot be resolved (neither environment nor default available).
+> Every required configuration value — an environment variable, a configuration-file key, or a command-line flag — MUST be validated at startup. The application MUST fail fast — exit non-zero with a clear error message naming the setting, and the file for a file key — when a required value is absent: an environment variable unset or set to an empty value, a key missing from its configuration file (the file itself absent included) or set to an empty value, or a flag not given or given an empty value. A value read from more than one source is absent only when every source it is read from, resolved in `CFG-ENV-007`'s order, leaves it absent — an empty value counting as absent at each — and the error then names each source checked.
 
-**Rationale:** Unvalidated config produces partial-failure modes that surface only at first use of the variable, often deep in a request path. Fail-fast at startup turns a confusing intermittent error into an obvious deployment-time failure.
+**Verification:** Any spec or plan that introduces a required configuration value MUST commit to the Statement's startup validation and error message. `/papur:analyze` flags plans that introduce a required configuration value without a startup-validation step. This rule governs an absent value declared required under `CFG-ENV-001`: a present but malformed one is `CFG-ENV-008`'s, and an out-of-range one `CFG-ENV-005`'s.
 
-**Verification:** Any spec or plan that introduces required env vars MUST commit to startup-time validation that names the failing variable in its error message. Validate flags plans that introduce env vars without a startup-validation step.
-
-**Source:** Twelve-Factor App (III. Config); "Fail Fast" pattern
+**Source:** Jim Shore, "Fail Fast" (IEEE Software 21(5), 2004); dotenv README (parsing rules)
 
 ### CFG-ENV-004
 
 > Environment variables holding time values MUST express their unit unambiguously. Two patterns are acceptable:
 >
-> - **Unit-in-value (preferred):** the env var value is parsed as a duration string (e.g., `30s`, `5m`, `100ms`); the parser MUST reject values without an explicit unit so a bare `30` is a parse error rather than an ambiguous quantity.
+> - **Unit-in-value (preferred):** the env var value is parsed as a duration string; the parser MUST reject a non-zero value without an explicit unit.
 > - **Unit-in-name:** the env var name carries a unit suffix (`_MS`, `_SECONDS`, `_MINUTES`, `_HOURS`) and the value is an integer in that unit.
 >
-> The corresponding default constant MUST also make the unit explicit — either by being a `time.Duration` value (e.g., `5 * time.Second`) or by carrying a matching unit suffix when the constant is an integer (e.g., `DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 30`).
+> The corresponding default constant MUST also make the unit explicit — either by being a typed duration value (e.g., Go `5 * time.Second`, Rust `Duration::from_secs(5)`, Java `Duration.ofSeconds(5)`) or by carrying a matching unit suffix when the constant is an integer.
 
-**Rationale:** Unit-less time variables produce off-by-1000x bugs — treating milliseconds as seconds, or vice versa. The unit-in-value pattern eliminates the ambiguity at the source: the operator MUST type a unit, and the parser rejects them if they don't. The unit-in-name pattern remains valid for cases where an integer is preferable (e.g., scripting environments that struggle with the duration-string format), but it shifts the safety burden to operator discipline rather than the parser.
+**Verification:** Any spec or plan that introduces a time-valued env var MUST commit to one of the two patterns — for unit-in-value, a duration parser that rejects bare non-zero numbers; for unit-in-name, the unit suffix on the env var name — and, where it has a default, to a default constant that is a typed duration or carries a unit suffix, the env var's own under unit-in-name. `/papur:analyze` flags plans that propose `*_TIMEOUT`, `*_INTERVAL`, `*_DELAY`, `*_TTL`, etc. without committing to one of the two patterns, and plans whose default constant is a bare integer with no unit suffix.
 
-**Verification:** Any spec or plan that introduces a time-valued env var MUST commit to one of the two patterns. For unit-in-value, the loader MUST use a duration parser that rejects bare numbers; for unit-in-name, both the env var name and the default constant name MUST carry the unit suffix. Validate flags plans that propose `*_TIMEOUT`, `*_INTERVAL`, `*_DELAY`, `*_TTL`, etc. without committing to one of the two patterns.
-
-**Source:** IEC 60027 (units of measurement); "Make Illegal States Unrepresentable"
+**Source:** ISO 80000-3 (quantities and units — space and time); Yaron Minsky, "Make illegal states unrepresentable" ("Effective ML Revisited", Jane Street, 2011); Spring Boot, "Externalized Configuration"; Go, `time.ParseDuration`
 
 ### CFG-ENV-005
 
-> Environment variables whose Config field has a documented valid range MUST be validated against that range at startup. Out-of-range values MUST cause fail-fast with an error message naming the variable, the offending value, and the violated bound.
+> Every configuration value with a documented valid range (bounds named per `CFG-CONST-004`) — an environment variable, a configuration-file key, or a command-line flag — MUST be validated against that range at startup. An out-of-range value MUST cause fail-fast with an error message naming the setting, and the file for a file key, the offending value (redacted per `CFG-ENV-006` when the setting is sensitive), and the violated bound.
 
-**Rationale:** A misconfigured timeout, retry count, pool size, or threshold can produce silent degraded behavior at runtime — requests timing out under load, exhausting connections, retrying forever — long after deployment. Catching out-of-range values at startup turns a confusing production incident into an obvious deployment-time failure.
+**Verification:** Any spec or plan that introduces a configuration value with a documented valid range MUST include a startup-validation step whose error message names what the Statement requires. `/papur:analyze` flags plans that introduce ranged configuration values without a startup-range-check step.
 
-**Verification:** Any spec or plan that introduces an env var with a documented valid range MUST include a startup-validation step that names the failing variable, the offending value, and the violated bound in the error message. Validate flags plans that introduce ranged env vars without a startup-range-check step.
-
-**Source:** "Fail Fast" pattern; defense in depth
+**Source:** Jim Shore, "Fail Fast" (IEEE Software 21(5), 2004)
 
 ### CFG-ENV-006
 
-> Configuration values flagged as sensitive (secrets, credentials, tokens, keys, PII) MUST be redacted before appearing in logs, error messages, diagnostic dumps, health-check responses, or any other operator-facing output. The redaction MUST occur at the config-loading layer so downstream code cannot accidentally bypass it.
+> Configuration values flagged as sensitive (secrets, credentials, tokens, keys, PII) MUST be redacted before appearing in logs, error messages, diagnostic dumps, health-check responses, trace context the application propagates, product-analytics events and session-replay recordings, any other operator-facing output, any other response the application returns to a client, or any message it sends to a person, an email, SMS or push notification, in a link or its body. Each sensitive value MUST be marked as sensitive when it is loaded, and the redaction MUST occur at the config-loading layer. A sensitive value MUST NOT be placed in a configuration service the project populates for client code to fetch, such as Firebase Remote Config, which lets the end user read every parameter it delivers. A value its issuer designs to be public (a publishable API key, an OAuth client ID for a public client) is not sensitive.
 
-**Rationale:** Configuration objects are routinely serialized for debugging — a `printf("%+v", config)`, a `console.log(config)`, an uncaught exception that includes the config in its message — and any of those paths can publish secrets to logs, dashboards, and on-call channels. Marking sensitivity at load time and redacting in a single chokepoint (a `Redacted[T]` wrapper type, a `__repr__` override, a logger filter) closes the leak at its source.
+**Verification:** Any spec or plan that introduces sensitive configuration MUST commit to a sensitivity marker and to a redaction mechanism applied at the config-loading layer; one that has a configuration value or a configuration object written to a log line, an error report, telemetry, propagated trace context included, a product-analytics event or user property, a session-replay recording or another operator-facing output, an existing value newly written there included, MUST commit to that redaction for each sensitive one; one that introduces a response returning configuration values or the process environment to a client, or changes one to return them, such as a runtime configuration endpoint, server-rendered page data or a URL a response carries, a redirect's `Location` included, or a message the application sends to a person carrying them, MUST commit to excluding or redacting the sensitive ones, a value its issuer designs to be public, as `CFG-ENV-010` lists them, not being one; and one that introduces or changes a parameter of a configuration service client code fetches MUST commit to placing no sensitive value there. `/papur:analyze` flags plans that handle secrets without naming the redaction mechanism, affected-files snippets that log, serialize, or report a sensitive configuration value or a configuration object without applying it, a spec or plan that logs, reports or otherwise outputs a configuration value or object, such as a sync job logging its effective configuration at startup, without that commitment, a spec or plan that returns configuration values, a configuration object or the process environment to a client, or sends them to a person in a message, without that commitment, and one that places a sensitive value in such a configuration service. This rule governs a sensitive configuration value, alone or in a configuration object, in any error message, an error response returned to a client included, in other operator-facing output, in a product-analytics event or user property or a session-replay recording, in any other response the application returns to a client, in a message it sends to a person, or in a configuration service client code fetches, while one the build injects into an artifact delivered to end users is `CFG-ENV-010`'s: any other sensitive value in a log line is `security-backend.md` `BE-LOG-002`'s where `security-backend.md` is also loaded and `security-cross.md` `SEC-LOG-001`'s otherwise, any other internal detail in a production error response `security-backend.md` `BE-ERR-001`'s, a sensitive configuration value in propagated trace context `security-backend.md` `BE-LOG-008`'s where `security-backend.md` is also loaded and this rule's otherwise, and any other sensitive value there `BE-LOG-008`'s where `security-backend.md` is also loaded and `security-cross.md` `SEC-LOG-001`'s otherwise.
 
-**Verification:** Any spec or plan that introduces sensitive configuration MUST commit to a sensitivity marker and to a redaction mechanism applied at the config-loading layer. Validate flags plans that handle secrets without naming the redaction wrapper, and flags affected-files snippets that log or serialize config objects without applying the wrapper.
-
-**Source:** OWASP Logging Cheat Sheet; "Make Illegal States Unrepresentable"
+**Source:** OWASP Logging Cheat Sheet (Data to exclude); Stripe, "API keys" (publishable keys); Google Maps Platform security guidance (keys exposed on a web page); RFC 6749, section 2.2 (a client identifier is not a secret); Firebase, "Remote Config" (Policies and limits)
 
 ### CFG-ENV-007
 
 > Configuration value precedence MUST be documented and consistent across the application. The standard precedence is, from highest to lowest: command-line flag → environment variable → configuration file → in-code default constant. Deviations from this order MUST be justified in `specs/system.md`.
 
-**Rationale:** Inconsistent precedence — some values reading the env first, others reading the file first — produces baffling deployment incidents where a flag "doesn't take effect" because a stale env value silently wins. A documented, uniform order makes the resolved value predictable and debuggable.
+**Verification:** Any spec or plan that introduces a configurable value with more than one source MUST describe the resolution order and confirm it follows the standard. `/papur:analyze` flags plans whose config-loading description departs from the standard order without an explicit justification reference in `specs/system.md`.
 
-**Verification:** Any spec or plan that introduces a configurable value with more than one source (e.g., both a flag and an env var, both an env var and a file entry) MUST describe the resolution order and confirm it follows the standard. Validate flags plans whose config-loading description departs from the standard order without an explicit justification reference in `specs/system.md`.
+**Source:** Viper (Go) and Spring Boot externalized-configuration precedence orders; "Principle of Least Surprise"
 
-**Source:** Twelve-Factor App (III. Config); "Principle of Least Surprise"
+### CFG-ENV-008
+
+> Every configuration value — whether read from an environment variable, a configuration file, or a command-line flag — MUST be parsed into its declared type (integer, boolean, enumerated member, duration, URL, list) at startup. A value that is present but fails to parse MUST cause fail-fast — exit non-zero with an error naming the setting and the offending value (redacted per `CFG-ENV-006` when the setting is sensitive) — and MUST NOT silently fall back to the default constant or be coerced to a zero, empty, or `false` value.
+
+**Verification:** Any spec or plan that introduces a configuration value MUST name its type and commit to a startup parse that fails fast on a malformed value. `/papur:analyze` flags plans that describe falling back to the default when a value fails to parse, and flags affected-files snippets that discard a parse error, use a parser that yields `NaN`, zero, or `false` instead of an error, or use one that stops at the first invalid character and returns what it read so far. This rule governs a present but malformed value: an absent one is `CFG-ENV-003`'s, and an out-of-range one `CFG-ENV-005`'s. The offending value of a sensitive setting, printed unredacted, is `CFG-ENV-006`'s.
+
+**Source:** Jim Shore, "Fail Fast" (IEEE Software 21(5), 2004); Alexis King, "Parse, don't validate" (2019)
+
+### CFG-ENV-009
+
+> A value that varies between deployments — backing-service locators (database, cache, and queue URLs), external service endpoints, per-deploy hostnames and ports — SHOULD be supplied at deploy time through the environment (an environment variable, a mounted configuration file, or a secrets manager) rather than compiled into the code. Application code SHOULD NOT branch on the deployment environment's name (`if env == "production"`, `NODE_ENV === "staging"`) to select values or behavior; each setting that differs between deployments SHOULD be a configuration value of its own. Build tooling and libraries that key on a standard mode variable (e.g., `NODE_ENV`) MAY continue to read it; this rule governs application code.
+
+**Verification:** Any spec or plan that introduces a value or behavior that differs between deployments SHOULD source it from deploy-time configuration under its own name. `/papur:analyze` emits a warning when a plan or its affected-files snippets select values or behavior by comparing against an environment name, or hard-code a backing-service locator as a constant. **Not flagged:** a credential compiled into the code, which `CFG-ENV-001` owns when it is an in-code default, `CFG-ENV-010` when the code ships in a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build), and `CFG-ENV-013` otherwise.
+
+**Source:** Twelve-Factor App (III. Config; V. Build, release, run)
+
+### CFG-ENV-010
+
+> Every configuration value injected into an artifact delivered to end users — a browser bundle (Vite `VITE_*`, Next.js `NEXT_PUBLIC_*`, a bundler define/replace plugin such as webpack `DefinePlugin`), a mobile app binary, or a distributed desktop or CLI build — is public. Secrets MUST NOT reach such artifacts, whether injected by the build or written in client source, and the build MUST expose to client code only the variables explicitly designated for it (a public-prefix convention or an explicit allowlist), never the whole build environment. Values their issuer designs to be public (publishable API keys, OAuth client IDs for public clients) MAY be injected.
+
+**Verification:** Any spec or plan that introduces client-side build configuration, a configuration value the build injects into client code, or client code that embeds a credential MUST name which variables the build exposes to the client and confirm that no secret reaches the artifact, through those variables or written in client source. `/papur:analyze` flags plans that route a credential, private API key, signing key, or private token through a public-prefixed variable or a define plugin, or write one as a literal in client source, and flags build configurations that inject the entire environment into client code. This rule governs a secret that reaches a client artifact, wherever the secret sits before the build: in source, in version control, in the CI environment, or in a build stage's container image. A secret's in-application default value is `CFG-ENV-001`'s, while its exposure in the artifact stays this rule's; any other secret that never reaches a client artifact but sits in source, version control, a container build or another build artifact is `CFG-ENV-013`'s; one in browser storage at run time is `security-frontend.md` `FE-STORAGE-001`'s; and a sensitive configuration value the build does not inject into a client artifact, which the application returns to a client at run time in a response or in server-rendered page data, or which a configuration service delivers to client code, is `CFG-ENV-006`'s.
+
+**Source:** Vite, "Env Variables and Modes" (Protecting secrets) and `envPrefix` (Security Notes); Next.js, "Environment Variables" (Bundling environment variables for the browser); RFC 6749, section 2.2
+
+### CFG-ENV-011
+
+> Environment variables holding data sizes (byte counts such as buffer, request-body, upload, cache, and memory limits) MUST express their unit unambiguously. Two patterns are acceptable:
+>
+> - **Unit-in-value:** the env var value is parsed as a size string; the parser MUST reject a non-zero value without an explicit unit.
+> - **Unit-in-name:** the env var name carries a unit suffix (e.g., `_BYTES`, `_KIB`, `_MIB`) and the value is an integer in that unit.
+>
+> Under either pattern, a unit whose multiplier differs between parsers (`KB`, `MB`, `GB`, `TB`, `k`, `M`, `G`, `T`) MUST have its multiplier — powers of 1000 or powers of 1024 — stated in the variable's inventory entry (`CFG-ENV-002`). The corresponding default constant MUST also make the unit explicit — either by being a typed size value or by carrying a matching unit suffix when the constant is an integer.
+
+**Verification:** Any spec or plan that introduces a data-size env var MUST commit to one of the two patterns — for unit-in-value, a size parser that rejects bare non-zero numbers; for unit-in-name, the unit suffix on the env var name — and, where it has a default, to a default constant that is a typed size or carries a unit suffix, the env var's own under unit-in-name. `/papur:analyze` flags plans that propose an env var whose value is a byte count — a body, upload, buffer, cache, file, or memory limit, however it is named — without committing to one of the two patterns, plans whose default constant is a bare integer with no unit suffix, and a `KB`, `MB`, `GB`, `TB`, `k`, `M`, `G`, or `T` unit, in a value or a name, whose multiplier the inventory does not state. **Not flagged:** a count of items, such as a batch, pool, or page size, which is not a data size; and a binary unit such as `KiB` or `MiB` whose multiplier the inventory does not state, since the Statement's list omits it.
+
+**Source:** IEC 80000-13 (binary prefixes; NIST, "Prefixes for binary multiples"); Spring Framework, `DataSize` Javadoc and `DataUnit` Javadoc; Spring Boot, "Externalized Configuration"; Kubernetes, `Quantity` serialization format
+
+### CFG-ENV-012
+
+> A key in a configuration file that the application does not recognize, within the settings the application owns, SHOULD fail startup with an error naming the key and the file. Where one file must be read by more than one version of the application at once — during a rolling deploy, or when older binaries read the same file — an unrecognized key SHOULD instead produce a startup warning that names it. An unrecognized key SHOULD NOT be silently ignored. Sections of a shared file that belong to other tools MAY pass unexamined.
+
+**Verification:** Any spec or plan that introduces a configuration file, or a section of one, SHOULD state how its loader treats an unrecognized key — failing startup, or warning by name where more than one application version reads the file. `/papur:analyze` emits a warning when a plan's config-loading description or affected-files snippets decode a configuration file with a decoder left at its ignore-unknown-keys default and no warning for the keys it drops. **Not flagged:** an unrecognized variable in the process environment.
+
+**Source:** serde, "Container attributes" (`deny_unknown_fields`); Go `encoding/json` (`Decoder.DisallowUnknownFields`); Spring Boot, `@ConfigurationProperties` (`ignoreUnknownFields`)
+
+### CFG-ENV-013
+
+> Secrets (API keys, database credentials, encryption keys, signing keys, third-party tokens) MUST NOT be written in source code or a container-build manifest, committed to version control, passed to a container build as a build argument or environment variable, or placed into a container image or other build artifact. A build step that needs a secret MAY receive it through the build tool's secret mechanism, such as a Docker secret mount, which makes it available only for the duration of the build instruction that uses it. A secret MAY be committed encrypted when each service that uses it in each environment has its own copy, each environment has its own value, decryption key and decryptor, no developer can decrypt any copy, nothing but that service or the controller or sidecar decrypting for it can decrypt a copy, and every decryption key is held outside version control and every artifact (one `SealedSecret` per service in the default `strict` scope, which binds it to its name and namespace, sealed for that environment's own controller, whose private key no developer can read, for example). A credential for a throwaway local or test resource that grants no access to a production or shared system is not a secret under this rule, such as a `docker-compose.yml` `POSTGRES_PASSWORD: postgres` or a committed `.env.test` key for a local emulator.
+
+**Verification:** Any spec or plan that introduces a secret, or a build, container-build, dev-server or deploy configuration that uses one, MUST keep the secret out of every place the Statement names. `/papur:analyze` flags plans that commit a secret to the repository, in a `.env` or other configuration file included; affected-files snippets that write a secret as a literal in source, in build or dev-server configuration, or in a script; container builds that pass a secret through an `ENV` or `ARG` instruction or a build argument, or `COPY` a secret file into the image; and builds that package a secret into an artifact. A plan that commits an encrypted secret MUST show, for each copy, that it meets every condition of the Statement's permission, naming its environment, the one service that uses it, what decrypts it, and where each key that can decrypt it is held and who can use it, and is flagged when it omits or contradicts any condition for any copy. **Not flagged:** a credential for a throwaway local or test resource that grants no access to a production or shared system, such as a `docker-compose.yml` `POSTGRES_PASSWORD: postgres` or a committed `.env.test` key for a local emulator, which is not a secret under this rule, while a secret committed encrypted still owes every condition above; a secret a build step receives through the build tool's secret mechanism and writes into no image or artifact; the commit of a secret encrypted as the Statement permits, though not its placement into an image or artifact; and a public key or certificate, such as an age recipient in `.sops.yaml` or a certificate from `kubeseal --fetch-cert`. A secret's in-application default value (a fallback the application's own code supplies when the configured value is absent) is `CFG-ENV-001`'s wherever the source holding it goes, its commit and any image or build artifact built from it included. Of the secret's other placements, those of a secret that reaches a client artifact (a browser bundle, a mobile app binary, or a distributed desktop or CLI build) are `CFG-ENV-010`'s, wherever they sit before the build, and the rest stay this rule's, a `Dockerfile` `ENV`, a value or default in a committed configuration file (a configuration-file source in `CFG-ENV-007`'s order), and a fallback in build, dev-server or deploy configuration or a script included.
+
+**Source:** OWASP Secrets Management Cheat Sheet (3.6 Pipeline Created Secrets; 5.1 Injection of Secrets; 8.1 General detection approaches); Docker documentation, "Build variables" and "Build secrets"; Bitnami Sealed Secrets README; CWE-798 (Use of Hard-coded Credentials)
+
+## CFG-FLAG — Feature flags
+
+### CFG-FLAG-001
+
+> Every feature flag MUST have a declared default value, and flag evaluation MUST resolve to that default — never throw, block indefinitely, or yield an undefined state — on any evaluation failure, such as a flag source that is unreachable or times out, or a value of the wrong type.
+
+**Verification:** Any spec or plan that introduces a feature flag MUST name its default value and commit to evaluation that returns it on any evaluation failure. `/papur:analyze` flags plans that introduce a flag without a named default, and flags affected-files snippets whose flag lookup can throw or yield an undefined value. The evaluation timeout is an operator-tunable value governed by `CFG-CONST-003`.
+
+**Source:** OpenFeature specification, Flag Evaluation API (Requirement 1.4.10; Requirement 1.3.4)
+
+### CFG-FLAG-002
+
+> A feature flag introduced to gate a release, rollout, or experiment SHOULD be recorded with an owner and a removal criterion when it is introduced, and its removal SHOULD be tracked as a work item from that point. Long-lived operational flags (kill switches, entitlement toggles) MAY omit the removal criterion when they are declared permanent.
+
+**Verification:** Any spec or plan that introduces a release, rollout, or experiment flag SHOULD commit to each obligation in the Statement. `/papur:analyze` emits a warning when a plan introduces such a flag with neither a removal criterion nor a declaration that it is permanent.
+
+**Source:** Pete Hodgson, "Feature Toggles (aka Feature Flags)" (martinfowler.com)

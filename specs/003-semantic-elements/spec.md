@@ -1,13 +1,6 @@
 ---
 status: planned
 dependencies: [002-attribute-syntax]
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 next-criterion: 12
 ---
 

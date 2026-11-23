@@ -1,13 +1,6 @@
 ---
 status: draft
 dependencies: [001-file-format]
-review:
-  last-run: null
-  reviewed-against: null
-  must-violations: 0
-  should-violations: 0
-  low-confidence: 0
-  blocking: false
 next-criterion: 6
 ---
 

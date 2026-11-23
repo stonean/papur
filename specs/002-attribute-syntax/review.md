@@ -1,13 +1,14 @@
 ---
 spec: 002-attribute-syntax
-reviewed-at: 2026-06-30T16:45:59Z
-reviewed-against: 30ec393a590ba3210faa5dbd73f315732b4e0afa
 diff-base: 2af8175b2820cd018839dffc426c87b670655c05
+captured-issues: 1
+skipped-passes: []
+last-run: 2026-06-30T16:45:59Z
+reviewed-against: 30ec393a590ba3210faa5dbd73f315732b4e0afa
 must-violations: 0
 should-violations: 0
 low-confidence: 0
-captured-issues: 1
-skipped-passes: []
+blocking: false
 ---
 
 # Review — 002-attribute-syntax

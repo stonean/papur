@@ -1,0 +1,93 @@
+---
+description: Merge a spec into another and remove its directory, first re-pointing the inbound pointers it reads.
+argument-hint: "<feature> --into <feature>"
+---
+
+# Consolidate
+
+Remove a spec directory whose content belongs with another, after re-pointing the pointers that named it in the files it reads.
+
+## Purpose
+
+**This is the only command that removes a durable artifact.** `/papur:prune` removes only content the framework classes as not durable: spent task sections of `tasks.md`, or every section under `--reset`, since `tasks.md` is ephemeral work-tracking; and the `plan.md` sections outside its design record, whose durable pieces it moves home first. `spec.md` is a durable source of truth, and consolidation deletes it along with everything else in its directory. Recovery is git history and nothing else.
+
+It exists because the alternative is worse. A corpus of small overlapping specs accumulates ones whose content was never a separate concern, and an operator's only current recourse is `rm -rf` — no pointer rewriting, no anti-stranding refusal, no confirmation naming what is lost. Safety comes from the guards, not from withholding the command.
+
+The question this command answers is whether the source spec still describes something true. A spec whose content was never a separate concern from a sibling, or that a later spec absorbed outright, is consolidated. A spec that still describes live behavior is not — it is edited in place instead, taking the `done → in-progress` back-edge when `classify-spec-edit` says the edit reopens it, which leaves one true description where consolidation would leave none.
+
+It is a **cleanup command**, in the family of [041 — Spec directory pruning](https://github.com/stonean/ductus/blob/main/specs/041-task-pruning/spec.md): operator-initiated, confirmed, and never a way to advance a spec — this command changes no status, and prune changes one only to reopen a `done` spec.
+
+## Context
+
+Parse `$ARGUMENTS` for the **source** feature — the spec being removed — and resolve it through `resolve-feature` (`ambiguous` and `not-found` are domain outcomes to surface, not errors to swallow). There is no session-target fallback: the argument to a deletion is named explicitly or the run stops.
+
+The **target** comes from `--into` and is resolved the same way. It must be a directory holding a `spec.md`; a target that is not a home is where content would be stranded, and the primitives refuse it rather than trusting this command to have checked.
+
+## Consolidation performs no content migration
+
+None of what `/papur:fold` does happens here — no body edit, no scenario creation, no task append, no status change, no review invalidation. Fold moves content because a branch-scoped spec was never meant to stand alone; consolidation assumes the merge already happened, or that nothing needed merging. **The guard proves the target exists; it never proves anything landed there.** That is why the confirmation must name content loss rather than directory removal.
+
+**Nor does it compare the two specs.** Whether the target actually covers what the source claimed is a real question and a deliberate non-goal: it is semantic judgment over two documents, which is what the operator's agent is for, and building it as a step here would put a slow comparison in front of every consolidation to serve the minority that wants it. An operator who wants the check asks for it in the same conversation, before confirming at step 3.
+
+**The source spec's scenarios go with its directory.** They are destroyed, not migrated — deliberately unlike fold-back, which creates one scenario under the upstream spec for every scenario the retiring spec carried. A scenario is a distinct artifact with its own open-question gate, and an operator who reads "the spec is removed" does not necessarily picture them, so the confirmation names them one by one rather than folding them into a general claim about content.
+
+Adding `--into` to `/papur:fold` instead was considered and rejected: fold's enumeration step, its post-merge instruction, and its single-source rule for the fold target are all specific to the branch-scoped staging form, and carrying a sequential path through them would qualify seven load-bearing statements.
+
+### Moving the content first
+
+**Merge the content into the target first, run this command second, and commit the two together.** Merging means body edits to the target and a move into it (`mv`, then `git add -A -- {source} {destination}`, which stages the rename; `/papur:configure` denies `git mv`) for each scenario or data model it is to hold. A moved file leaves every link to it dangling — the source's own links to `scenarios/{slug}.md`, and every inbound `../{source}/scenarios/{slug}.md` — until step 4 re-points the inbound ones and step 5 removes the source's, and the pre-commit hook's `check-corpus-links` refuses a commit holding a dangling link. So a move committed on its own is refused, and it lands in the consolidation's commit.
+
+There are two ways to look at the work before the removal lands:
+
+- **Review the uncommitted tree.** Nothing this command writes is committed until the operator commits, so its diff can be read first, and git restores every file it touched from the last commit. An edit to the source that was never committed is the exception: nothing recovers it.
+- **Commit a checkpoint.** Copy rather than move. Every link still resolves, so the merge commits on its own, and this command then re-points the inbound links onto the copies and removes the originals. The cost is history: git pairs a rename only within one commit, so `git log --follow` on a copied scenario stops at the checkpoint.
+
+### Flags
+
+| Flag | Behavior |
+| --- | --- |
+| `--into <feature>` | The spec the source's content belongs with — the **target**. Required. It must hold a `spec.md`, which is the anti-stranding condition both primitives enforce |
+
+## Scope Boundaries
+
+- This command re-points inbound pointers across the spec root and in the files `check-orphaned-references` reads outside it (adopter-owned root files such as `README.md` and `.githooks/pre-commit`), and removes the **source** feature directory. Into the target it writes one thing: each link one of the target's own files held to the source, re-pointed relative to that file when it climbs to the spec root (step 4). It writes no other content into the target's body, scenarios or `tasks.md`, and changes neither its `status` nor its `review.md` and `analysis.md` records.
+- Removal is irreversible and writes no backup: recovery is git history, exactly as for `/papur:prune`.
+- `dependencies:` and `references:` are never hand-edited here. They are derived from body links, and the pre-commit generators regenerate them from the rewritten bodies on the next commit.
+- Do NOT read or modify source code or test files — consolidation merges specifications, not implementations.
+- Reference: §spec-lifecycle, §numbering, §cross-spec-impact, §text-first-artifacts, §pipeline-boundaries, §spec-phase (spec-root resolution) (constitution loaded by `/papur:target` — do not re-read).
+
+## Instructions
+
+> **For agent runtimes**: the Invoke steps below call the ductus runtime's MCP tools; without the server, stop and say to restart or re-run `/ductus` (§runtime-host-integration).
+>
+> **Claude Code:** load this command's `ductus` tools in one `ToolSearch` call, and send the command's first `ductus` call in that same message, since a tool can be called beside the search that loads it: `select:mcp__ductus__gate-confirm,mcp__ductus__read-section,mcp__ductus__retarget-sessions,mcp__ductus__retire-feature,mcp__ductus__rewrite-spec-links`
+
+**Where a named section lives.** This command's reference is `.ductus/reference/consolidate.md`. A section named here, or cited elsewhere as part of this command, that has no heading in this file is there. When a step points at one, invoke `read-section` with that path and every section the step names, in one call, rather than reading the whole file.
+
+**An interrupted consolidation is completed by re-running it.** The runtime provides no transaction spanning the rewrite and the removal — the condition `/papur:fold` documents for the same pair of steps — so the recovery is a second run, and each write is built so a re-run is a no-op where the first attempt landed:
+
+| Step | What makes a re-run safe |
+| --- | --- |
+| 4 — `rewrite-spec-links` | Idempotent by construction once a run's `refused-count` is zero: once re-pointed, no pointer names the source, so a second pass rewrites nothing. A file another writer changed after the sweep read it is **refused**, left as that writer made it, and still names the source, so a run whose `refused-count` is not zero did not complete and running the step again re-reads and re-points what is left; step 5 waits for a run whose `refused-count` is zero. It refuses an absent target *before* writing, which is what keeps that idempotence from becoming a trap — a rewrite that ran against nothing could not be undone by re-running — and reads every file before its first write, so one it cannot read stops it with the tree untouched. A write that fails part-way is the gap: the files before it stay re-pointed and that run's `kept-tails` are lost, and a re-run cannot list the kept tails of those files, since nothing in them names the source any more. So a run stopped here, or one that re-ran after a refusal, says in its report that its kept tails are unknown, not that there are none, unless it carries each run's. |
+| 5 — `retire-feature` | Already-absent is `retired: false`, a domain outcome rather than a failure: the previous run finished, and this one converges. |
+
+An interruption *before* the rewrite leaves the corpus exactly as it was. One *between* the two leaves pointers re-pointed and the directory present, which the second run finishes.
+
+**On `ductus exec` step 2 does not run**, because it dispatches no primitive: nothing enumerates what the removal destroys. The confirmation still fires and still requires an answer, so a human is in the loop — but the prompt they answer will not name the scenarios being destroyed, which is most of what the confirmation exists to tell them. Treat the exec path as unsuitable for consolidating a spec anything else points at, and prefer the interactive walk; the reduction is documented rather than silent.
+
+1. Invoke `read-spec` (with `include-body`) against both specs — the source for its status and its body, and the target to establish that it holds a readable `spec.md`. A target that does not is the refusal both primitives enforce; report it and stop before anything is examined further, since there is no home for the content to have landed in. So is a target that is the source itself: consolidating a spec into itself would remove it with nowhere for its content to have gone, and the retirement refuses it.
+
+<!-- audit:ignore-promotion -->
+2. Enumerate what the removal destroys (host responsibility; a directory walk, not a decision). List the source directory's contents by name — **each scenario individually**, then `plan.md`, `tasks.md`, `review.md`, `analysis.md`, `data-model.md`, and any other artifact present. The scenarios are named one by one rather than summarized: they are destroyed with the directory and migrated nowhere, and "the spec is removed" does not make an operator picture them. For each scenario, say whether the target holds one of the same file name. An operator who copied the content sees what landed by name, and a name match proves nothing about content, so the scenario is still named as destroyed. This list is what the confirmation in step 3 carries.
+
+3. Invoke `gate-confirm` with a `gate` name (e.g. `consolidate-remove`) and a `prompt` that names **content loss**, not merely the removal of a directory: this command migrates nothing, so everything step 2 enumerated is destroyed — the scenarios by name among it. Name the source and target, and that recovery is git history alone. No write happens before this step; denial ends the run cleanly with nothing written and nothing removed.
+
+4. Invoke `rewrite-spec-links` with `from` set to the source feature and `to` set to the target feature; its description states what it re-points, what it skips and how it writes a link inside the target. `/papur:fold` uses it too, with no variant, since its contract already covers a retiring **or renamed** directory. When the result's `refused-count` is not zero (the count is inline in both forms; past the read size the list is in the file `lists-file` names), stop before step 5: each listed file was changed by another writer after the sweep read it, was left as that writer made it and still names the source, so the sweep did not complete; say so and run this step again, which reads each file as it now is, and go on only once a run's `refused-count` is zero, since removing the directory first would leave those pointers dangling. The result's `mentions` lists each line that still names the source afterwards, for step 7; read `rewritten`, `skipped`, `kept-tails` and `mentions` from the file `lists-file` names when `form` is `file`. The result's `examined` count is what bounds a zero `rewritten-count` as *nothing pointed here* rather than *nothing was checked*. Frontmatter indexes are left alone by design: they are derived from body links and regenerate on the next commit.
+
+5. Invoke `retire-feature` with the source feature, the target as its fold target, and the **explicit opt-in** that permits removing a sequential directory. The refusal on the sequential form is gated here, never removed: `/papur:fold` does not pass the opt-in, so a mistyped feature name during a fold still meets it unchanged, and the flag is not a weaker guard but the record that a second, explicit decision was made. The anti-stranding refusal — the target must hold a `spec.md` — is untouched and applies to both callers, and it is re-checked here even though step 4 established the same fact, because the primitive is callable on its own and the guard on the one irreversible step must not rest on a caller's promise.
+
+<!-- audit:ignore-promotion -->
+6. Clear every session that named the source (host responsibility: the exec walker seeds its target from the session, so it cannot bind the removed feature apart from it, and this step dispatches nothing there — the reduction is documented rather than silent). Call the retarget-sessions primitive with `from` set to the source feature, `cause` set to `consolidate`, and `clear`. The source directory no longer exists, and §concurrent-features forbids leaving any session pointing at it: a target naming a directory that is gone is a dangling pointer in a file the framework owns, and every follow-on command resolves it and fails one step removed from the command that broke it. The primitive clears every session in the working tree that named the source — the shared default, keeping its per-contributor `cli-config-dir` so the agent identity survives, and every per-process target, each left with no target that it never fills by adopting the default — leaves each other per-process session a notice its next command delivers, clears the shared default without one (every unidentified process reads it, so there is no single reader to tell, and the result names it among the sessions it cleared), and writes nothing when no session named the source. **Clear rather than re-target**, and the reason is stated in §concurrent-features: `/papur:fold` re-targets because its content moved to a spec that continues the work, while this command's target is a spec that already existed and that the operator may have no interest in — they were removing something, not adopting it. Re-targeting there would assert an intent nobody stated. A session naming any other feature is not this removal's business and is left untouched.
+
+<!-- audit:ignore-promotion -->
+7. Report the consolidation (host responsibility): the source removed, the target it was consolidated into, and each file step 4 re-pointed with its count, and each one it refused and the run that finally re-pointed it — a root file such as `README.md` named like any other, since nothing else tells the operator the consolidation touched one — each `skipped` file with its reason, and each `kept-tails` reference of every run, which now names the target's file of that name: the merge was meant to put that content there, so the operator confirms it did. A kept tail into `tasks.md` cites a task by number, and the number now means one of the target's tasks: re-point the sentence at the right task, or name the source's work in prose. A kept tail naming a file the target does not hold dangles, and the pre-commit hook refuses the commit until it is fixed. Report each `mentions` line as the sweep the operator owes: each still names the source by its directory name or its number, and a present-tense pointer to it is corrected while a past-tense record of it stays. The list covers the files the rewrite examined — the spec root and the referrers — so a mention in docs or code is not in it. Name every session step 6 cleared (`default` is the shared default), so the operator knows which now have no target rather than discovering it from the next command, and any `unreadable` file step 6 left in place, since that file may still name the removed spec (spec 062, AC22). Recommend committing before anything else, with the content move in the same commit (see Moving the content first, above): `dependencies:` and `references:` across the corpus are regenerated by the pre-commit hook from the rewritten body links, so the first commit after a consolidation is what makes those indexes correct.
